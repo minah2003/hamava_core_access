@@ -16,8 +16,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
-use Spatie\Permission\PermissionServiceProvider;
 use Spatie\Permission\PermissionRegistrar;
+use Spatie\Permission\PermissionServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
