@@ -1,0 +1,47 @@
+{
+    "name": "hamava/core-access",
+    "description": "Reusable access control services for Hamava Laravel applications.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/routing": "^13.0",
+        "illuminate/support": "^13.0",
+        "spatie/laravel-permission": "^8.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.24",
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^12.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Hamava\\CoreAccess\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Hamava\\CoreAccess\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Hamava\\CoreAccess\\CoreAccessServiceProvider"
+            ],
+            "aliases": {
+                "CoreAccess": "Hamava\\CoreAccess\\Facades\\CoreAccess",
+                "CoreNavigation": "Hamava\\CoreAccess\\Facades\\CoreNavigation"
+            }
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "pint": "vendor/bin/pint --test"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
