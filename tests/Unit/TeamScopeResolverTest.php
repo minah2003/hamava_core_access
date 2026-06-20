@@ -9,6 +9,53 @@ use Hamava\CoreAccess\Tests\TestCase;
 
 class TeamScopeResolverTest extends TestCase
 {
+    public function test_module_wide_scope_matches_with_or_without_access_node(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $module = $this->module('inventory');
+        $team = $this->team('OPS');
+        $node = $this->node($module, 'inventory.records');
+        $scope = $this->scope($team, $module, 'region', 10);
+        $resource = ResourceDescriptor::make('inventory', 'record', 1, null, ['region_id' => 10]);
+
+        $matchesWithoutNode = $resolver->matchingScopesForTeams([$team->id], $module->code, $resource, 'allow');
+        $matchesWithNode = $resolver->matchingScopesForTeams([$team->id], $module->code, $resource, 'allow', $node->id);
+
+        $this->assertSame([$scope->id], $matchesWithoutNode->pluck('id')->all());
+        $this->assertSame([$scope->id], $matchesWithNode->pluck('id')->all());
+    }
+
+    public function test_node_specific_scope_matches_only_the_same_access_node(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $module = $this->module('inventory');
+        $team = $this->team('OPS');
+        $node = $this->node($module, 'inventory.records');
+        $scope = $this->scope($team, $module, 'region', 10, 'allow', $node);
+        $resource = ResourceDescriptor::make('inventory', 'record', 1, null, ['region_id' => 10]);
+
+        $matches = $resolver->matchingScopesForTeams([$team->id], $module->code, $resource, 'allow', $node->id);
+        $matchesWithoutNode = $resolver->matchingScopesForTeams([$team->id], $module->code, $resource, 'allow');
+
+        $this->assertSame([$scope->id], $matches->pluck('id')->all());
+        $this->assertCount(0, $matchesWithoutNode);
+    }
+
+    public function test_node_specific_scope_does_not_match_another_access_node_in_same_module(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $module = $this->module('inventory');
+        $team = $this->team('OPS');
+        $recordsNode = $this->node($module, 'inventory.records');
+        $assetsNode = $this->node($module, 'inventory.assets');
+        $this->scope($team, $module, 'region', 10, 'allow', $recordsNode);
+        $resource = ResourceDescriptor::make('inventory', 'record', 1, null, ['region_id' => 10]);
+
+        $matches = $resolver->matchingScopesForTeams([$team->id], $module->code, $resource, 'allow', $assetsNode->id);
+
+        $this->assertCount(0, $matches);
+    }
+
     public function test_scope_matching_supports_ids_codes_and_ancestors(): void
     {
         $resolver = app(TeamScopeResolver::class);

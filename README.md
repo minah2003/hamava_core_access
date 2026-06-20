@@ -43,10 +43,43 @@ those migrations in the application repository.
 
 Default table names are configured in `config/core-access.php`.
 
+## Team Scope Semantics
+
+Team scopes in `core_team_scopes` can be either module-wide or access-node
+specific:
+
+- `access_node_id = null` means the scope is module-wide. It can match any
+  access node in the scope's module and preserves legacy scope behavior.
+- `access_node_id != null` means the scope only matches checks for that exact
+  access node. If a permission has no `access_node_id`, node-specific scopes do
+  not match it.
+
+Scope enforcement is still controlled by `permissions.requires_scope` or
+`core_access_nodes.requires_scope`. Catalog rules do not enforce access by
+themselves.
+
+## Scope Catalogs
+
+Consuming applications own migrations for the dynamic scope catalog tables:
+
+- `core_scope_entity_providers` defines where selectable scope entities come
+  from for a `module_code` and `scope_type`. Table-backed providers use the
+  persisted table and column metadata; request data never supplies table or
+  column names directly.
+- `core_access_node_scope_rules` defines the scope types and UI/catalog rules
+  available for each access node, including entity requirements, child-scope
+  support, and asset category/type modes.
+
+`Hamava\CoreAccess\Services\ScopeCatalogService` and
+`Hamava\CoreAccess\Services\ScopeEntityOptionProvider` both return empty
+results gracefully when these tables have not been created yet.
+
 ## Main APIs
 
 - `Hamava\CoreAccess\Services\CoreAccessResolver`
 - `Hamava\CoreAccess\Services\CoreNavigationResolver`
+- `Hamava\CoreAccess\Services\ScopeCatalogService`
+- `Hamava\CoreAccess\Services\ScopeEntityOptionProvider`
 - `Hamava\CoreAccess\Services\TeamScopeResolver`
 - `Hamava\CoreAccess\Facades\CoreAccess`
 - `Hamava\CoreAccess\Facades\CoreNavigation`

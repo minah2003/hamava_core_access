@@ -11,6 +11,8 @@ return [
         'team_member_roles' => 'core_team_member_roles',
         'team_scopes' => 'core_team_scopes',
         'resource_grants' => 'core_resource_grants',
+        'scope_entity_providers' => 'core_scope_entity_providers',
+        'access_node_scope_rules' => 'core_access_node_scope_rules',
     ],
 
     'operator_global_permissions' => [

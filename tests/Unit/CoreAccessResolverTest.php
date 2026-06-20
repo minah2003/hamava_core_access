@@ -76,6 +76,53 @@ class CoreAccessResolverTest extends TestCase
         $this->assertSame('Allowed by operator-global capability.', $decision->reason);
     }
 
+    public function test_deny_scope_with_matching_access_node_overrides_allow_scope(): void
+    {
+        $user = $this->user('node-deny');
+        $module = $this->module('inventory');
+        $node = $this->node($module, 'inventory.records.edit');
+        $permission = $this->permission('inventory.records.edit', $module, true, $node);
+        $role = $this->role('inventory_editor', $module, $permission);
+        $team = $this->team('NODE-DENY');
+
+        $this->membership($user, $team, $role, $module);
+        $this->scope($team, $module, 'region', 10);
+        $this->scope($team, $module, 'region', 10, 'deny', $node);
+
+        $decision = app(CoreAccessResolver::class)->check(
+            $user,
+            $permission->name,
+            ResourceDescriptor::make('inventory', 'record', 15, null, ['region_id' => 10]),
+        );
+
+        $this->assertFalse($decision->allowed);
+        $this->assertSame('Denied by team scope.', $decision->reason);
+    }
+
+    public function test_deny_scope_with_different_access_node_does_not_block_another_node(): void
+    {
+        $user = $this->user('node-allow');
+        $module = $this->module('inventory');
+        $recordsNode = $this->node($module, 'inventory.records.edit');
+        $assetsNode = $this->node($module, 'inventory.assets.edit');
+        $permission = $this->permission('inventory.assets.edit', $module, true, $assetsNode);
+        $role = $this->role('inventory_asset_editor', $module, $permission);
+        $team = $this->team('NODE-ALLOW');
+
+        $this->membership($user, $team, $role, $module);
+        $this->scope($team, $module, 'region', 10);
+        $this->scope($team, $module, 'region', 10, 'deny', $recordsNode);
+
+        $decision = app(CoreAccessResolver::class)->check(
+            $user,
+            $permission->name,
+            ResourceDescriptor::make('inventory', 'record', 15, null, ['region_id' => 10]),
+        );
+
+        $this->assertTrue($decision->allowed);
+        $this->assertSame('Allowed by team scope and role capability.', $decision->reason);
+    }
+
     private function createScopedAccess(): array
     {
         $user = $this->user('scoped');

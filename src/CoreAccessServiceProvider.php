@@ -5,6 +5,8 @@ namespace Hamava\CoreAccess;
 use Hamava\CoreAccess\Middleware\CoreCan;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
 use Hamava\CoreAccess\Services\CoreNavigationResolver;
+use Hamava\CoreAccess\Services\ScopeCatalogService;
+use Hamava\CoreAccess\Services\ScopeEntityOptionProvider;
 use Hamava\CoreAccess\Services\TeamScopeResolver;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
@@ -18,6 +20,8 @@ class CoreAccessServiceProvider extends ServiceProvider
         $this->app->singleton(TeamScopeResolver::class);
         $this->app->singleton(CoreAccessResolver::class);
         $this->app->singleton(CoreNavigationResolver::class);
+        $this->app->singleton(ScopeCatalogService::class);
+        $this->app->singleton(ScopeEntityOptionProvider::class);
 
         $this->app->alias(CoreAccessResolver::class, 'hamava.core-access');
         $this->app->alias(CoreNavigationResolver::class, 'hamava.core-navigation');

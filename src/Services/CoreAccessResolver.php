@@ -37,6 +37,8 @@ class CoreAccessResolver
             return AccessDecision::deny('Capability is not defined.');
         }
 
+        $permission->loadMissing('accessNode');
+        $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
         $memberships = $this->scopes->activeMemberships($user);
 
         if ($memberships->isEmpty()) {
@@ -71,7 +73,7 @@ class CoreAccessResolver
         }
 
         if ($descriptor) {
-            $denyScopes = $this->scopes->matchingScopesForTeams($effectiveAssignments->pluck('membership.team_id')->all(), $moduleCode, $descriptor, 'deny');
+            $denyScopes = $this->scopes->matchingScopesForTeams($effectiveAssignments->pluck('membership.team_id')->all(), $moduleCode, $descriptor, 'deny', $accessNodeId);
 
             if ($denyScopes->isNotEmpty()) {
                 $matched['scope_ids'] = $denyScopes->pluck('id')->all();
@@ -84,7 +86,7 @@ class CoreAccessResolver
             return AccessDecision::allow('Allowed by operator-global capability.', $matched);
         }
 
-        $requiresScope = (bool) $permission->requires_scope;
+        $requiresScope = (bool) $permission->requires_scope || (bool) $permission->accessNode?->requires_scope;
 
         if (! $requiresScope) {
             return AccessDecision::allow('Allowed by team membership role capability.', $matched);
@@ -102,7 +104,7 @@ class CoreAccessResolver
             return AccessDecision::allow('Allowed by explicit resource grant.', $matched);
         }
 
-        $allowScopes = $this->scopes->matchingScopesForTeams($roleAssignments->pluck('membership.team_id')->all(), $moduleCode, $descriptor, 'allow');
+        $allowScopes = $this->scopes->matchingScopesForTeams($roleAssignments->pluck('membership.team_id')->all(), $moduleCode, $descriptor, 'allow', $accessNodeId);
 
         if ($allowScopes->isEmpty()) {
             return AccessDecision::deny('No matching scope for resource.', $matched);

@@ -45,4 +45,9 @@ class CoreAccessNode extends Model
     {
         return $this->hasMany(CorePermission::class, 'access_node_id');
     }
+
+    public function scopeRules(): HasMany
+    {
+        return $this->hasMany(CoreAccessNodeScopeRule::class, 'access_node_id');
+    }
 }

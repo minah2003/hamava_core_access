@@ -50,9 +50,11 @@ class TeamScopeResolver
         string $moduleCode,
         ResourceDescriptor $resource,
         ?string $effect = null,
+        ?int $accessNodeId = null,
     ): EloquentCollection {
         return $this->activeScopesForTeams($teamIds, $moduleCode)
             ->filter(fn (CoreTeamScope $scope): bool => ($effect === null || $scope->effect === $effect)
+                && $this->matchesAccessNode($scope, $accessNodeId)
                 && $this->matches($scope, $resource))
             ->values();
     }
@@ -69,6 +71,7 @@ class TeamScopeResolver
                 'id' => $scope->id,
                 'team_code' => $scope->team?->code,
                 'module' => $scope->module?->code,
+                'access_node_id' => $scope->access_node_id,
                 'scope_type' => $scope->scope_type,
                 'scope_id' => $scope->scope_id,
                 'scope_code' => $scope->scope_code,
@@ -119,5 +122,14 @@ class TeamScopeResolver
         }
 
         return $scope->scope_id === null && $scope->scope_code === null;
+    }
+
+    private function matchesAccessNode(CoreTeamScope $scope, ?int $accessNodeId): bool
+    {
+        if ($scope->access_node_id === null) {
+            return true;
+        }
+
+        return $accessNodeId !== null && (int) $scope->access_node_id === $accessNodeId;
     }
 }

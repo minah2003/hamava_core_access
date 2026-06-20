@@ -160,11 +160,12 @@ abstract class TestCase extends OrchestraTestCase
         return $membership;
     }
 
-    protected function scope(CoreTeam $team, CoreModule $module, string $type, int|string|null $id, string $effect = 'allow'): CoreTeamScope
+    protected function scope(CoreTeam $team, CoreModule $module, string $type, int|string|null $id, string $effect = 'allow', ?CoreAccessNode $accessNode = null): CoreTeamScope
     {
         return CoreTeamScope::query()->create([
             'team_id' => $team->id,
             'module_id' => $module->id,
+            'access_node_id' => $accessNode?->id,
             'scope_type' => $type,
             'scope_id' => $id,
             'include_children' => true,
@@ -176,6 +177,10 @@ abstract class TestCase extends OrchestraTestCase
     {
         foreach ([
             'core_resource_grants',
+            'core_access_node_scope_rules',
+            'core_scope_entity_providers',
+            'regions',
+            'assets',
             'core_team_scopes',
             'core_team_member_roles',
             'core_team_members',
