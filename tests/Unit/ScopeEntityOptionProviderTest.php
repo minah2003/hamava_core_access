@@ -131,6 +131,7 @@ class ScopeEntityOptionProviderTest extends TestCase
             $table->boolean('is_active')->default(true);
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 }

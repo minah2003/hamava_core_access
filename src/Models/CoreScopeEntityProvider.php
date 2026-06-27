@@ -4,9 +4,12 @@ namespace Hamava\CoreAccess\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CoreScopeEntityProvider extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'core_scope_entity_providers';
 
     protected $guarded = [];
