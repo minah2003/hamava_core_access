@@ -28,6 +28,29 @@ class CoreNavigationResolverTest extends TestCase
         $this->assertNotContains($reports->code, $flat);
     }
 
+    public function test_navigation_shows_only_nodes_with_matching_node_specific_scope(): void
+    {
+        $user = $this->user('scoped-navigator');
+        $module = $this->module('inventory');
+        $root = $this->node($module, 'inventory', type: 'module');
+        $records = $this->node($module, 'inventory.records', $root);
+        $assets = $this->node($module, 'inventory.assets', $root);
+
+        $recordsPermission = $this->permission('inventory.records.view', $module, true, $records);
+        $assetsPermission = $this->permission('inventory.assets.view', $module, true, $assets);
+        $role = $this->role('inventory_scoped_viewer', $module, $recordsPermission, $assetsPermission);
+        $team = $this->team('SCOPED-NAV');
+
+        $this->membership($user, $team, $role, $module);
+        $this->scope($team, $module, 'region', 10, 'allow', $records);
+
+        $flat = $this->flattenCodes(app(CoreNavigationResolver::class)->forUser($user, 'inventory'));
+
+        $this->assertContains($root->code, $flat);
+        $this->assertContains($records->code, $flat);
+        $this->assertNotContains($assets->code, $flat);
+    }
+
     private function flattenCodes($items): array
     {
         return collect($items)

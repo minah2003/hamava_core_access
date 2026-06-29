@@ -9,6 +9,7 @@ use Hamava\CoreAccess\Models\CorePermission;
 use Hamava\CoreAccess\Models\CoreResourceGrant;
 use Hamava\CoreAccess\Models\CoreTeamMember;
 use Hamava\CoreAccess\Models\CoreTeamMemberRole;
+use Hamava\CoreAccess\Models\CoreTeamRole;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 
@@ -59,7 +60,7 @@ class CoreAccessResolver
             return AccessDecision::deny('No active membership role grants this capability.');
         }
 
-        $effectiveAssignments = $roleAssignments->isNotEmpty() ? $roleAssignments : $operatorGlobalAssignments;
+        $effectiveAssignments = $this->mergeAssignments($roleAssignments, $operatorGlobalAssignments);
         $matched = $this->matchedFromAssignments($effectiveAssignments);
 
         $grantDeny = $descriptor
@@ -73,7 +74,7 @@ class CoreAccessResolver
         }
 
         if ($descriptor) {
-            $denyScopes = $this->scopes->matchingScopesForTeams($effectiveAssignments->pluck('membership.team_id')->all(), $moduleCode, $descriptor, 'deny', $accessNodeId);
+            $denyScopes = $this->scopes->matchingScopesForTeams($effectiveAssignments->pluck('team_id')->all(), $moduleCode, $descriptor, 'deny', $accessNodeId);
 
             if ($denyScopes->isNotEmpty()) {
                 $matched['scope_ids'] = $denyScopes->pluck('id')->all();
@@ -104,7 +105,7 @@ class CoreAccessResolver
             return AccessDecision::allow('Allowed by explicit resource grant.', $matched);
         }
 
-        $allowScopes = $this->scopes->matchingScopesForTeams($roleAssignments->pluck('membership.team_id')->all(), $moduleCode, $descriptor, 'allow', $accessNodeId);
+        $allowScopes = $this->scopes->matchingScopesForTeams($roleAssignments->pluck('team_id')->all(), $moduleCode, $descriptor, 'allow', $accessNodeId);
 
         if ($allowScopes->isEmpty()) {
             return AccessDecision::deny('No matching scope for resource.', $matched);
@@ -120,6 +121,77 @@ class CoreAccessResolver
         return $this->check($user, $capability, $resource)->allowed;
     }
 
+    public function canEnterAccessNode(?Authenticatable $user, string $capability, ?string $moduleCode = null): AccessDecision
+    {
+        if (! $user || (method_exists($user, 'isActive') && ! $user->isActive())) {
+            return AccessDecision::deny('User is not active.');
+        }
+
+        $permission = CorePermission::query()->where('name', $capability)->first();
+
+        if (! $permission) {
+            return AccessDecision::deny('Capability is not defined.');
+        }
+
+        $permission->loadMissing('accessNode', 'module');
+        $moduleCode ??= $permission->module?->code ?? str($capability)->before('.')->toString();
+        $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
+        $module = CoreModule::query()->where('code', $moduleCode)->first();
+
+        if (! $module) {
+            return AccessDecision::deny('Module is not defined.');
+        }
+
+        $memberships = $this->scopes->activeMemberships($user);
+
+        if ($memberships->isEmpty()) {
+            return AccessDecision::deny('User has no active team memberships.');
+        }
+
+        $roleAssignments = $this->roleAssignmentsWithCapability($memberships, $capability, $moduleCode);
+        $operatorGlobalAssignments = $this->operatorGlobalAssignments($memberships, $moduleCode);
+
+        if ($roleAssignments->isEmpty() && $operatorGlobalAssignments->isEmpty()) {
+            return AccessDecision::deny('No active membership role grants this capability.');
+        }
+
+        if ($operatorGlobalAssignments->isNotEmpty()) {
+            return AccessDecision::allow(
+                'Allowed by operator-global capability.',
+                $this->matchedFromAssignments($this->mergeAssignments($roleAssignments, $operatorGlobalAssignments)),
+            );
+        }
+
+        $matched = $this->matchedFromAssignments($roleAssignments);
+        $requiresScope = (bool) $permission->requires_scope || (bool) $permission->accessNode?->requires_scope;
+
+        if (! $requiresScope) {
+            return AccessDecision::allow('Allowed by team membership role capability.', $matched);
+        }
+
+        $teamIds = $roleAssignments->pluck('team_id')->all();
+        $denyScopes = $this->scopes
+            ->activePageEntryScopesForTeams($teamIds, $moduleCode, 'deny', $accessNodeId)
+            ->where('scope_type', 'all')
+            ->values();
+
+        if ($denyScopes->isNotEmpty()) {
+            $matched['scope_ids'] = $denyScopes->pluck('id')->all();
+
+            return AccessDecision::deny('Denied by team scope.', $matched);
+        }
+
+        $allowScopes = $this->scopes->activePageEntryScopesForTeams($teamIds, $moduleCode, 'allow', $accessNodeId);
+
+        if ($allowScopes->isEmpty()) {
+            return AccessDecision::deny('No matching scope for access node.', $matched);
+        }
+
+        $matched['scope_ids'] = $allowScopes->pluck('id')->all();
+
+        return AccessDecision::allow('Allowed by team scope and role capability.', $matched);
+    }
+
     /**
      * @return Collection<int, string>
      */
@@ -129,10 +201,8 @@ class CoreAccessResolver
             return collect();
         }
 
-        return $this->scopes->activeMemberships($user)
-            ->flatMap(fn (CoreTeamMember $membership) => $membership->roles
-                ->filter(fn (CoreTeamMemberRole $assignment) => $this->assignmentIsActiveForModule($assignment, $moduleCode))
-                ->flatMap(fn (CoreTeamMemberRole $assignment) => $assignment->role?->permissions ?? collect()))
+        return $this->activeEffectiveRoleAssignments($this->scopes->activeMemberships($user), $moduleCode)
+            ->flatMap(fn (array $assignment) => $assignment['role']?->permissions ?? collect())
             ->when($moduleCode, fn (Collection $permissions) => $permissions->filter(fn ($permission) => str_starts_with($permission->name, "{$moduleCode}.")))
             ->pluck('name')
             ->unique()
@@ -190,49 +260,124 @@ class CoreAccessResolver
 
     /**
      * @param  Collection<int, CoreTeamMember>  $memberships
-     * @return Collection<int, CoreTeamMemberRole>
+     * @return Collection<int, array<string, mixed>>
      */
     private function roleAssignmentsWithCapability(Collection $memberships, string $capability, string $moduleCode): Collection
     {
-        return $memberships
-            ->flatMap(fn (CoreTeamMember $membership) => $membership->roles->map(function (CoreTeamMemberRole $assignment) use ($membership) {
-                $assignment->setRelation('membership', $membership);
-
-                return $assignment;
-            }))
-            ->filter(fn (CoreTeamMemberRole $assignment): bool => $this->assignmentIsActiveForModule($assignment, $moduleCode)
-                && (bool) $assignment->role?->is_active
-                && $assignment->role->permissions->contains('name', $capability))
+        return $this->activeEffectiveRoleAssignments($memberships, $moduleCode)
+            ->filter(fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())->contains('name', $capability))
             ->values();
     }
 
-    private function assignmentIsActiveForModule(CoreTeamMemberRole $assignment, ?string $moduleCode = null): bool
+    /**
+     * @param  Collection<int, CoreTeamMember>  $memberships
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function activeEffectiveRoleAssignments(Collection $memberships, ?string $moduleCode = null): Collection
     {
-        if ($assignment->valid_from && $assignment->valid_from->gt(today())) {
-            return false;
-        }
-
-        if ($assignment->valid_to && $assignment->valid_to->lt(today())) {
-            return false;
-        }
-
-        if (! $moduleCode || ! $assignment->module_id) {
-            return true;
-        }
-
-        return $assignment->module?->code === $moduleCode;
+        return $this->effectiveRoleAssignments($memberships)
+            ->filter(fn (array $assignment): bool => $this->assignmentIsActiveForModule($assignment, $moduleCode)
+                && (bool) ($assignment['role']?->is_active))
+            ->values();
     }
 
     /**
-     * @param  Collection<int, CoreTeamMemberRole>  $assignments
+     * @param  Collection<int, CoreTeamMember>  $memberships
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function effectiveRoleAssignments(Collection $memberships): Collection
+    {
+        return $memberships
+            ->flatMap(function (CoreTeamMember $membership): Collection {
+                $memberAssignments = collect($membership->roles
+                    ->map(fn (CoreTeamMemberRole $assignment): array => $this->normalizeMemberRoleAssignment($membership, $assignment))
+                    ->all());
+
+                $teamAssignments = collect(($membership->team?->teamRoles ?? collect())
+                    ->map(fn (CoreTeamRole $assignment): array => $this->normalizeTeamRoleAssignment($membership, $assignment))
+                    ->all());
+
+                return $memberAssignments->merge($teamAssignments);
+            })
+            ->values();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeMemberRoleAssignment(CoreTeamMember $membership, CoreTeamMemberRole $assignment): array
+    {
+        return [
+            'source' => 'member',
+            'assignment' => $assignment,
+            'membership' => $membership,
+            'role' => $assignment->role,
+            'module' => $assignment->module,
+            'team_id' => $membership->team_id,
+            'membership_id' => $membership->id,
+            'role_id' => $assignment->role_id,
+            'module_id' => $assignment->module_id,
+            'module_code' => $assignment->module?->code,
+            'team_role_id' => null,
+            'member_role_assignment_id' => $assignment->id,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeTeamRoleAssignment(CoreTeamMember $membership, CoreTeamRole $assignment): array
+    {
+        return [
+            'source' => 'team',
+            'assignment' => $assignment,
+            'membership' => $membership,
+            'role' => $assignment->role,
+            'module' => $assignment->module,
+            'team_id' => $membership->team_id,
+            'membership_id' => $membership->id,
+            'role_id' => $assignment->role_id,
+            'module_id' => $assignment->module_id,
+            'module_code' => $assignment->module?->code,
+            'team_role_id' => $assignment->id,
+            'member_role_assignment_id' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $assignment
+     */
+    private function assignmentIsActiveForModule(array $assignment, ?string $moduleCode = null): bool
+    {
+        $model = $assignment['assignment'];
+
+        if ($model->valid_from && $model->valid_from->gt(today())) {
+            return false;
+        }
+
+        if ($model->valid_to && $model->valid_to->lt(today())) {
+            return false;
+        }
+
+        if (! $moduleCode || ! $assignment['module_id']) {
+            return true;
+        }
+
+        return $assignment['module_code'] === $moduleCode;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $assignments
      * @return array<string, list<int|string>>
      */
     private function matchedFromAssignments(Collection $assignments): array
     {
         return [
-            'team_ids' => $assignments->pluck('membership.team_id')->filter()->unique()->values()->all(),
-            'membership_ids' => $assignments->pluck('team_member_id')->filter()->unique()->values()->all(),
+            'team_ids' => $assignments->pluck('team_id')->filter()->unique()->values()->all(),
+            'membership_ids' => $assignments->pluck('membership_id')->filter()->unique()->values()->all(),
             'role_ids' => $assignments->pluck('role_id')->filter()->unique()->values()->all(),
+            'team_role_ids' => $assignments->pluck('team_role_id')->filter()->unique()->values()->all(),
+            'member_role_assignment_ids' => $assignments->pluck('member_role_assignment_id')->filter()->unique()->values()->all(),
             'scope_ids' => [],
             'resource_grant_ids' => [],
         ];
@@ -246,11 +391,10 @@ class CoreAccessResolver
     {
         return $memberships
             ->map(function (CoreTeamMember $membership) use ($moduleCode): ?array {
-                $roles = $membership->roles
-                    ->filter(fn (CoreTeamMemberRole $assignment) => $this->assignmentIsActiveForModule($assignment, $moduleCode)
-                        && (bool) $assignment->role?->is_active
-                        && $assignment->role->permissions->contains(fn ($permission) => str_starts_with($permission->name, "{$moduleCode}.")))
-                    ->map(fn (CoreTeamMemberRole $assignment) => $assignment->role->display_name ?: $assignment->role->name)
+                $roles = $this->activeEffectiveRoleAssignments(collect([$membership]), $moduleCode)
+                    ->filter(fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())
+                        ->contains(fn ($permission) => str_starts_with($permission->name, "{$moduleCode}.")))
+                    ->map(fn (array $assignment) => $assignment['role']->display_name ?: $assignment['role']->name)
                     ->unique()
                     ->values();
 
@@ -271,7 +415,7 @@ class CoreAccessResolver
 
     /**
      * @param  Collection<int, CoreTeamMember>  $memberships
-     * @return Collection<int, CoreTeamMemberRole>
+     * @return Collection<int, array<string, mixed>>
      */
     private function operatorGlobalAssignments(Collection $memberships, string $moduleCode): Collection
     {
@@ -281,20 +425,30 @@ class CoreAccessResolver
             ->unique()
             ->values();
 
-        return $memberships
-            ->flatMap(fn (CoreTeamMember $membership) => $membership->roles->map(function (CoreTeamMemberRole $assignment) use ($membership) {
-                $assignment->setRelation('membership', $membership);
-
-                return $assignment;
-            }))
-            ->filter(fn (CoreTeamMemberRole $assignment) => $this->assignmentIsActiveForModule($assignment)
-                && (bool) $assignment->role?->is_active
-                && $assignment->role->permissions->contains(fn ($permission): bool => $globalPermissions->contains($permission->name)))
+        return $this->activeEffectiveRoleAssignments($memberships, $moduleCode)
+            ->filter(fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())
+                ->contains(fn ($permission): bool => $globalPermissions->contains($permission->name)))
             ->values();
     }
 
     /**
-     * @param  Collection<int, CoreTeamMemberRole>  $assignments
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function mergeAssignments(Collection ...$assignmentSets): Collection
+    {
+        return collect($assignmentSets)
+            ->flatMap(fn (Collection $assignments): Collection => $assignments)
+            ->unique(fn (array $assignment): string => implode(':', [
+                $assignment['source'],
+                $assignment['membership_id'],
+                $assignment['member_role_assignment_id'] ?? '',
+                $assignment['team_role_id'] ?? '',
+            ]))
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $assignments
      * @return Collection<int, CoreResourceGrant>
      */
     private function matchingResourceGrants(
@@ -307,8 +461,8 @@ class CoreAccessResolver
     ): Collection {
         $principalPairs = collect([
             ['user', $user->getAuthIdentifier()],
-            ...$assignments->pluck('membership.team_id')->unique()->map(fn ($id) => ['team', $id])->all(),
-            ...$assignments->pluck('team_member_id')->unique()->map(fn ($id) => ['team_member', $id])->all(),
+            ...$assignments->pluck('team_id')->unique()->map(fn ($id) => ['team', $id])->all(),
+            ...$assignments->pluck('membership_id')->unique()->map(fn ($id) => ['team_member', $id])->all(),
             ...$assignments->pluck('role_id')->unique()->map(fn ($id) => ['role', $id])->all(),
         ]);
 

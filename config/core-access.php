@@ -9,6 +9,7 @@ return [
         'teams' => 'core_teams',
         'team_members' => 'core_team_members',
         'team_member_roles' => 'core_team_member_roles',
+        'team_roles' => 'core_team_roles',
         'team_scopes' => 'core_team_scopes',
         'resource_grants' => 'core_resource_grants',
         'scope_entity_providers' => 'core_scope_entity_providers',

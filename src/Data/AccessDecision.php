@@ -16,6 +16,8 @@ class AccessDecision implements Arrayable
             'team_ids' => [],
             'membership_ids' => [],
             'role_ids' => [],
+            'team_role_ids' => [],
+            'member_role_assignment_ids' => [],
             'scope_ids' => [],
             'resource_grant_ids' => [],
         ],
@@ -47,6 +49,8 @@ class AccessDecision implements Arrayable
             'team_ids' => [],
             'membership_ids' => [],
             'role_ids' => [],
+            'team_role_ids' => [],
+            'member_role_assignment_ids' => [],
             'scope_ids' => [],
             'resource_grant_ids' => [],
         ];

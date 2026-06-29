@@ -3,6 +3,7 @@
 namespace Hamava\CoreAccess;
 
 use Hamava\CoreAccess\Middleware\CoreCan;
+use Hamava\CoreAccess\Middleware\CoreNodeCan;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
 use Hamava\CoreAccess\Services\CoreNavigationResolver;
 use Hamava\CoreAccess\Services\ScopeCatalogService;
@@ -34,5 +35,6 @@ class CoreAccessServiceProvider extends ServiceProvider
         ], 'hamava-core-access-config');
 
         $router->aliasMiddleware('core.can', CoreCan::class);
+        $router->aliasMiddleware('core.node', CoreNodeCan::class);
     }
 }

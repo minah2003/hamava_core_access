@@ -10,6 +10,7 @@ use Hamava\CoreAccess\Models\CoreRole;
 use Hamava\CoreAccess\Models\CoreTeam;
 use Hamava\CoreAccess\Models\CoreTeamMember;
 use Hamava\CoreAccess\Models\CoreTeamMemberRole;
+use Hamava\CoreAccess\Models\CoreTeamRole;
 use Hamava\CoreAccess\Models\CoreTeamScope;
 use Hamava\CoreAccess\Tests\Fixtures\User;
 use Illuminate\Database\Schema\Blueprint;
@@ -145,11 +146,7 @@ abstract class TestCase extends OrchestraTestCase
 
     protected function membership(User $user, CoreTeam $team, CoreRole $role, CoreModule $module): CoreTeamMember
     {
-        $membership = CoreTeamMember::query()->create([
-            'team_id' => $team->id,
-            'user_id' => $user->id,
-            'membership_role' => 'member',
-        ]);
+        $membership = $this->teamMembership($user, $team);
 
         CoreTeamMemberRole::query()->create([
             'team_member_id' => $membership->id,
@@ -158,6 +155,27 @@ abstract class TestCase extends OrchestraTestCase
         ]);
 
         return $membership;
+    }
+
+    protected function teamMembership(User $user, CoreTeam $team): CoreTeamMember
+    {
+        return CoreTeamMember::query()->create([
+            'team_id' => $team->id,
+            'user_id' => $user->id,
+            'membership_role' => 'member',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function teamRole(CoreTeam $team, CoreRole $role, ?CoreModule $module = null, array $attributes = []): CoreTeamRole
+    {
+        return CoreTeamRole::query()->create(array_merge([
+            'team_id' => $team->id,
+            'role_id' => $role->id,
+            'module_id' => $module?->id,
+        ], $attributes));
     }
 
     protected function scope(CoreTeam $team, CoreModule $module, string $type, int|string|null $id, string $effect = 'allow', ?CoreAccessNode $accessNode = null): CoreTeamScope
@@ -182,6 +200,7 @@ abstract class TestCase extends OrchestraTestCase
             'regions',
             'assets',
             'core_team_scopes',
+            'core_team_roles',
             'core_team_member_roles',
             'core_team_members',
             'core_teams',
@@ -314,6 +333,17 @@ abstract class TestCase extends OrchestraTestCase
         Schema::create('core_team_member_roles', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('team_member_id');
+            $table->unsignedBigInteger('role_id');
+            $table->unsignedBigInteger('module_id')->nullable();
+            $table->date('valid_from')->nullable();
+            $table->date('valid_to')->nullable();
+            $table->json('metadata')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('core_team_roles', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('team_id');
             $table->unsignedBigInteger('role_id');
             $table->unsignedBigInteger('module_id')->nullable();
             $table->date('valid_from')->nullable();

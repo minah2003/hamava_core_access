@@ -50,6 +50,11 @@ class CoreTeam extends Model
         return $this->hasMany(CoreTeamScope::class, 'team_id');
     }
 
+    public function teamRoles(): HasMany
+    {
+        return $this->hasMany(CoreTeamRole::class, 'team_id');
+    }
+
     private function userModel(): string
     {
         return config('core-access.user_model') ?: config('auth.providers.users.model');

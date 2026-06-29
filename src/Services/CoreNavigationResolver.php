@@ -12,7 +12,6 @@ class CoreNavigationResolver
 {
     public function __construct(
         private readonly CoreAccessResolver $access,
-        private readonly TeamScopeResolver $scopes,
     ) {}
 
     /**
@@ -67,26 +66,9 @@ class CoreNavigationResolver
             return false;
         }
 
-        $userCapabilities = $this->access->capabilities($user, $moduleCode);
-
-        if ($permissions->intersect($userCapabilities)->isEmpty()) {
-            return false;
-        }
-
-        $requiresScopedPermission = CorePermission::query()
-            ->whereIn('name', $permissions->all())
-            ->where('requires_scope', true)
-            ->exists();
-
-        if (! $requiresScopedPermission && ! $node->requires_scope) {
-            return true;
-        }
-
-        $teamIds = $this->scopes->activeMemberships($user)->pluck('team_id')->all();
-
-        return $this->scopes->activeScopesForTeams($teamIds, $moduleCode)
-            ->where('effect', 'allow')
-            ->isNotEmpty();
+        return $permissions->contains(
+            fn (string $permission): bool => $this->access->canEnterAccessNode($user, $permission, $moduleCode)->allowed,
+        );
     }
 
     /**

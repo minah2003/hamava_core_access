@@ -23,4 +23,9 @@ class CoreRole extends Role
     {
         return $this->hasMany(CoreTeamMemberRole::class, 'role_id');
     }
+
+    public function teamRoleAssignments(): HasMany
+    {
+        return $this->hasMany(CoreTeamRole::class, 'role_id');
+    }
 }

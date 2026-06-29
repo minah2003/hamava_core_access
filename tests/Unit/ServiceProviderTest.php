@@ -3,6 +3,7 @@
 namespace Hamava\CoreAccess\Tests\Unit;
 
 use Hamava\CoreAccess\Middleware\CoreCan;
+use Hamava\CoreAccess\Middleware\CoreNodeCan;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
 use Hamava\CoreAccess\Tests\TestCase;
 
@@ -13,5 +14,6 @@ class ServiceProviderTest extends TestCase
         $this->assertSame('core_modules', config('core-access.tables.modules'));
         $this->assertInstanceOf(CoreAccessResolver::class, app('hamava.core-access'));
         $this->assertSame(CoreCan::class, app('router')->getMiddleware()['core.can'] ?? null);
+        $this->assertSame(CoreNodeCan::class, app('router')->getMiddleware()['core.node'] ?? null);
     }
 }

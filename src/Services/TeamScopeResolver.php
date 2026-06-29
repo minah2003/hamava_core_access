@@ -18,7 +18,7 @@ class TeamScopeResolver
     public function activeMemberships(Authenticatable $user): EloquentCollection
     {
         return CoreTeamMember::query()
-            ->with(['team', 'roles.role.permissions', 'roles.module'])
+            ->with(['team', 'team.teamRoles.role.permissions', 'team.teamRoles.module', 'roles.role.permissions', 'roles.module'])
             ->where('user_id', $user->getAuthIdentifier())
             ->active()
             ->whereHas('team', fn ($query) => $query->where('is_active', true))
@@ -56,6 +56,22 @@ class TeamScopeResolver
             ->filter(fn (CoreTeamScope $scope): bool => ($effect === null || $scope->effect === $effect)
                 && $this->matchesAccessNode($scope, $accessNodeId)
                 && $this->matches($scope, $resource))
+            ->values();
+    }
+
+    /**
+     * @param  array<int|string>  $teamIds
+     * @return EloquentCollection<int, CoreTeamScope>
+     */
+    public function activePageEntryScopesForTeams(
+        array $teamIds,
+        string $moduleCode,
+        ?string $effect = null,
+        ?int $accessNodeId = null,
+    ): EloquentCollection {
+        return $this->activeScopesForTeams($teamIds, $moduleCode)
+            ->filter(fn (CoreTeamScope $scope): bool => ($effect === null || $scope->effect === $effect)
+                && $this->matchesAccessNode($scope, $accessNodeId))
             ->values();
     }
 
