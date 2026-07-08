@@ -9,6 +9,85 @@ use Hamava\CoreAccess\Tests\TestCase;
 
 class TeamScopeResolverTest extends TestCase
 {
+    public function test_all_scope_without_scope_identifier_matches_resource(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'all',
+        ]);
+        $resource = ResourceDescriptor::make('inventory', 'record', 1, null, ['region_id' => 10]);
+
+        $this->assertTrue($resolver->matches($scope, $resource));
+    }
+
+    public function test_user_scope_without_identifier_does_not_match_user_resource(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'user',
+        ]);
+        $resource = ResourceDescriptor::make('inventory', 'user', 15, 'operator-15', [
+            'user_id' => 15,
+            'user_code' => 'operator-15',
+        ]);
+
+        $this->assertFalse($resolver->matches($scope, $resource));
+    }
+
+    public function test_site_scope_without_identifier_does_not_match_site_resource(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'site',
+        ]);
+        $resource = ResourceDescriptor::make('inventory', 'site', 25, 'north-site', [
+            'site_id' => 25,
+            'site_code' => 'north-site',
+        ]);
+
+        $this->assertFalse($resolver->matches($scope, $resource));
+    }
+
+    public function test_process_group_scope_without_identifier_does_not_match_ticket_resource(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'process_group',
+        ]);
+        $resource = ResourceDescriptor::make('ticketing', 'ticket', 35, 'ticket-35', [
+            'process_group_id' => 45,
+            'process_group_code' => 'field-work',
+        ]);
+
+        $this->assertFalse($resolver->matches($scope, $resource));
+    }
+
+    public function test_asset_category_scope_without_category_or_code_does_not_match(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'asset_category',
+        ]);
+        $resource = ResourceDescriptor::make('inventory', 'asset', 1, 'asset-1', [
+            'asset_category' => 'network',
+        ]);
+
+        $this->assertFalse($resolver->matches($scope, $resource));
+    }
+
+    public function test_asset_type_scope_without_type_or_code_does_not_match(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'asset_type',
+        ]);
+        $resource = ResourceDescriptor::make('inventory', 'asset', 1, 'asset-1', [
+            'asset_type' => 'olt',
+        ]);
+
+        $this->assertFalse($resolver->matches($scope, $resource));
+    }
+
     public function test_module_wide_scope_matches_with_or_without_access_node(): void
     {
         $resolver = app(TeamScopeResolver::class);

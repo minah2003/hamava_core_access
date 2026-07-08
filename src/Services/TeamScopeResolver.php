@@ -101,11 +101,11 @@ class TeamScopeResolver
 
     public function matches(CoreTeamScope $scope, ResourceDescriptor $resource): bool
     {
-        if ($scope->asset_category && $resource->attribute('asset_category') !== $scope->asset_category) {
+        if ($this->hasScopeValue($scope->asset_category) && $resource->attribute('asset_category') !== $scope->asset_category) {
             return false;
         }
 
-        if ($scope->asset_type && $resource->attribute('asset_type') !== $scope->asset_type) {
+        if ($this->hasScopeValue($scope->asset_type) && $resource->attribute('asset_type') !== $scope->asset_type) {
             return false;
         }
 
@@ -114,15 +114,17 @@ class TeamScopeResolver
         }
 
         if ($scope->scope_type === 'asset_category') {
-            return $scope->scope_code
-                ? $resource->attribute('asset_category') === $scope->scope_code
-                : (bool) $scope->asset_category;
+            $category = $this->firstScopeValue($scope->scope_code, $scope->asset_category);
+
+            return $this->hasScopeValue($category)
+                && $resource->attribute('asset_category') === $category;
         }
 
         if ($scope->scope_type === 'asset_type') {
-            return $scope->scope_code
-                ? $resource->attribute('asset_type') === $scope->scope_code
-                : (bool) $scope->asset_type;
+            $type = $this->firstScopeValue($scope->scope_code, $scope->asset_type);
+
+            return $this->hasScopeValue($type)
+                && $resource->attribute('asset_type') === $type;
         }
 
         $includeAncestors = (bool) $scope->include_children;
@@ -133,11 +135,11 @@ class TeamScopeResolver
             return true;
         }
 
-        if ($scope->scope_code && in_array($scope->scope_code, $codes, true)) {
+        if ($this->hasScopeValue($scope->scope_code) && in_array((string) $scope->scope_code, $codes, true)) {
             return true;
         }
 
-        return $scope->scope_id === null && $scope->scope_code === null;
+        return false;
     }
 
     private function matchesAccessNode(CoreTeamScope $scope, ?int $accessNodeId): bool
@@ -147,5 +149,21 @@ class TeamScopeResolver
         }
 
         return $accessNodeId !== null && (int) $scope->access_node_id === $accessNodeId;
+    }
+
+    private function hasScopeValue(mixed $value): bool
+    {
+        return $value !== null && $value !== '';
+    }
+
+    private function firstScopeValue(mixed ...$values): mixed
+    {
+        foreach ($values as $value) {
+            if ($this->hasScopeValue($value)) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 }
