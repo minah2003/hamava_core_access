@@ -50,11 +50,14 @@ class CoreNavigationResolver
     {
         $permissions = CorePermission::query()
             ->where('access_node_id', $node->id)
+            ->where('is_active', true)
             ->pluck('name');
 
         if ($permissions->isEmpty()) {
             $permissions = CorePermission::query()
+                ->where('module_id', $node->module_id)
                 ->where('name', 'like', "{$node->code}.%")
+                ->where('is_active', true)
                 ->pluck('name');
         }
 

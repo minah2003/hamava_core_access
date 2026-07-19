@@ -373,5 +373,96 @@ class CoreAccessResolverTest extends TestCase
         $this->assertSame('Capability is not active.', $decision->reason);
     }
 
+    public function test_inactive_permission_is_excluded_from_capabilities(): void
+    {
+        $user = $this->user('inactive-capability');
+        $module = $this->module();
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            attributes: ['is_active' => false],
+        );
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $capabilities = app(CoreAccessResolver::class)
+            ->capabilities($user, 'inventory');
+
+        $this->assertNotContains(
+            $permission->name,
+            $capabilities->all(),
+        );
+    }
+
+    public function test_inactive_operator_global_permission_does_not_bypass_scope(): void
+    {
+        $user = $this->user('inactive-global');
+        $module = $this->module();
+        $edit = $this->permission(
+            'inventory.records.edit',
+            $module,
+            true,
+        );
+        $global = $this->permission(
+            'inventory.operator_global',
+            $module,
+            attributes: ['is_active' => false],
+        );
+        $role = $this->role('operator', $module, $global);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $decision = app(CoreAccessResolver::class)->check(
+            $user,
+            $edit->name,
+            ResourceDescriptor::make(
+                'inventory',
+                'record',
+                15,
+                null,
+                ['region_id' => 999],
+            ),
+        );
+
+        $this->assertFalse($decision->allowed);
+    }
+
+
+    public function test_navigation_excludes_node_with_inactive_permission(): void
+    {
+        $user = $this->user('inactive-nav');
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+        $root = $this->node($module, 'inventory', type: 'module');
+        $records = $this->node(
+            $module,
+            'inventory.records',
+            $root,
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            node: $records,
+            attributes: ['is_active' => false],
+        );
+
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $flat = $this->flattenCodes(
+            app(CoreNavigationResolver::class)
+                ->forUser($user, 'inventory')
+        );
+
+        $this->assertNotContains($records->code, $flat);
+    }
 
 }
