@@ -85,6 +85,30 @@ results gracefully when these tables have not been created yet.
 - `Hamava\CoreAccess\Facades\CoreNavigation`
 - `Hamava\CoreAccess\Middleware\CoreCan`
 
+## Domain Resource Contract
+
+Domain models that participate in resource-level authorization should
+implement:
+
+```php
+Hamava\CoreAccess\Contracts\DescribesCoreResource
+public function toCoreResourceDescriptor(): ResourceDescriptor
+{
+    return ResourceDescriptor::make(
+        module_code: 'inventory',
+        resource_type: 'record',
+        resource_id: $this->getKey(),
+        attributes: [
+            'region_id' => $this->region_id,
+        ],
+    );
+}
+
+Arbitrary objects are not converted automatically. Resource checks accept
+arrays, ResourceDescriptor instances, or objects implementing
+DescribesCoreResource.
+```
+
 ## Development
 
 Expected local checks:

@@ -2,6 +2,7 @@
 
 namespace Hamava\CoreAccess\Services;
 
+use Hamava\CoreAccess\Contracts\DescribesCoreResource;
 use Hamava\CoreAccess\Data\AccessDecision;
 use Hamava\CoreAccess\Data\ResourceDescriptor;
 use Hamava\CoreAccess\Models\CoreModule;
@@ -18,12 +19,12 @@ class CoreAccessResolver
     public function __construct(private readonly TeamScopeResolver $scopes) {}
 
     /**
-     * @param  array<string, mixed>|object|ResourceDescriptor|null  $resource
+     * @param  array<string, mixed>|DescribesCoreResource|ResourceDescriptor|null  $resource
      */
     public function check(
         ?Authenticatable $user,
         string $capability,
-        array|ResourceDescriptor|null $resource = null,
+        array|DescribesCoreResource|ResourceDescriptor|null $resource = null,
         ?string $moduleCode = null,
     ): AccessDecision {
         if (! $this->userIsActive($user)) {
@@ -136,9 +137,16 @@ class CoreAccessResolver
             && (! method_exists($user, 'isActive') || $user->isActive());
     }
 
-    public function can(?Authenticatable $user, string $capability, array|ResourceDescriptor|null $resource = null): bool
-    {
-        return $this->check($user, $capability, $resource)->allowed;
+    public function can(
+        ?Authenticatable $user,
+        string $capability,
+        array|DescribesCoreResource|ResourceDescriptor|null $resource = null,
+    ): bool {
+        return $this->check(
+            $user,
+            $capability,
+            $resource,
+        )->allowed;
     }
 
     public function canEnterAccessNode(?Authenticatable $user, string $capability, ?string $moduleCode = null): AccessDecision
