@@ -549,6 +549,113 @@ class CoreAccessResolverTest extends TestCase
         );
     }
 
+    public function test_inactive_member_role_is_denied(): void
+    {
+        $user = $this->user('inactive-member-role');
+        $module = $this->module();
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team('INACTIVE-MEMBER-ROLE');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $role->update([
+            'is_active' => false,
+        ]);
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $decision = $resolver->check(
+            $user,
+            $permission->name,
+        );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'No active membership role grants this capability.',
+            $decision->reason,
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities(
+                $user,
+                $module->code,
+            )->all(),
+        );
+    }
+
+    public function test_inactive_team_level_role_is_denied(): void
+    {
+        $user = $this->user('inactive-team-role');
+        $module = $this->module();
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'team_viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team('INACTIVE-TEAM-ROLE');
+
+        $this->teamMembership(
+            $user,
+            $team,
+        );
+
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+        );
+
+        $role->update([
+            'is_active' => false,
+        ]);
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $decision = $resolver->check(
+            $user,
+            $permission->name,
+        );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'No active membership role grants this capability.',
+            $decision->reason,
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities(
+                $user,
+                $module->code,
+            )->all(),
+        );
+    }
+
     private function createScopedAccess(): array
     {
         $user = $this->user('scoped');
