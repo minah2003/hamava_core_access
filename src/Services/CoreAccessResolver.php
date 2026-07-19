@@ -26,16 +26,16 @@ class CoreAccessResolver
         array|ResourceDescriptor|null $resource = null,
         ?string $moduleCode = null,
     ): AccessDecision {
-        if (! $user || (method_exists($user, 'isActive') && ! $user->isActive())) {
-            return AccessDecision::deny('User is not active.');
+       if (! $this->userIsActive($user)) {
+        return AccessDecision::deny('User is not active.');
         }
 
         $moduleCode ??= str($capability)->before('.')->toString();
         $descriptor = ResourceDescriptor::from($resource, $moduleCode);
         $permission = CorePermission::query()->where('name', $capability)->first();
 
-        if (! $permission) {
-            return AccessDecision::deny('Capability is not defined.');
+        if (! $permission->is_active) {
+            return AccessDecision::deny('Capability is not active.');
         }
 
         $permission->loadMissing('accessNode');
@@ -116,6 +116,9 @@ class CoreAccessResolver
         return AccessDecision::allow('Allowed by team scope and role capability.', $matched);
     }
 
+    /**
+    * @phpstan-assert-if-true Authenticatable $user
+    */
     private function userIsActive(?Authenticatable $user): bool
     {
         return $user !== null
@@ -129,14 +132,15 @@ class CoreAccessResolver
 
     public function canEnterAccessNode(?Authenticatable $user, string $capability, ?string $moduleCode = null): AccessDecision
     {
-        if (! $user || (method_exists($user, 'isActive') && ! $user->isActive())) {
+        if (! $this->userIsActive($user)) {
             return AccessDecision::deny('User is not active.');
         }
 
         $permission = CorePermission::query()->where('name', $capability)->first();
 
-        if (! $permission) {
-            return AccessDecision::deny('Capability is not defined.');
+
+        if (! $permission->is_active) {
+            return AccessDecision::deny('Capability is not active.');
         }
 
         $permission->loadMissing('accessNode', 'module');
@@ -203,7 +207,7 @@ class CoreAccessResolver
      */
     public function capabilities(?Authenticatable $user, ?string $moduleCode = null): Collection
     {
-        if (! $user) {
+        if (! $this->userIsActive($user)) {
             return collect();
         }
 
@@ -221,7 +225,7 @@ class CoreAccessResolver
      */
     public function visibleModules(?Authenticatable $user): Collection
     {
-        if (! $user || (method_exists($user, 'isActive') && ! $user->isActive())) {
+        if (! $this->userIsActive($user)) {
             return collect();
         }
 

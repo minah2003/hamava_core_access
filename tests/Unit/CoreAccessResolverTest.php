@@ -351,4 +351,27 @@ class CoreAccessResolverTest extends TestCase
         $this->assertFalse($resolver->can($user, $permission->name));
         $this->assertSame([], $resolver->capabilities($user)->all());
     }
+
+    public function test_inactive_permission_is_denied(): void
+    {
+        $user = $this->user();
+        $module = $this->module();
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            attributes: ['is_active' => false],
+        );
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $decision = app(CoreAccessResolver::class)
+            ->check($user, $permission->name);
+
+        $this->assertFalse($decision->allowed);
+        $this->assertSame('Capability is not active.', $decision->reason);
+    }
+
+
 }
