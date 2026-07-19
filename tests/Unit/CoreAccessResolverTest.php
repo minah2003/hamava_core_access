@@ -333,4 +333,22 @@ class CoreAccessResolverTest extends TestCase
 
         return [$user, $module, $permission, $node, $role, $team];
     }
+
+    public function test_inactive_user_is_denied_and_has_no_capabilities(): void
+    {
+        $user = $this->user('inactive-user');
+        $module = $this->module();
+        $permission = $this->permission('inventory.records.view', $module);
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $user->update(['is_active' => false]);
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $this->assertFalse($resolver->can($user, $permission->name));
+        $this->assertSame([], $resolver->capabilities($user)->all());
+    }
 }

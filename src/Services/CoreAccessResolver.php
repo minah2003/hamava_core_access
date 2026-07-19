@@ -116,6 +116,12 @@ class CoreAccessResolver
         return AccessDecision::allow('Allowed by team scope and role capability.', $matched);
     }
 
+    private function userIsActive(?Authenticatable $user): bool
+    {
+        return $user !== null
+            && (! method_exists($user, 'isActive') || $user->isActive());
+    }
+
     public function can(?Authenticatable $user, string $capability, array|ResourceDescriptor|null $resource = null): bool
     {
         return $this->check($user, $capability, $resource)->allowed;
