@@ -306,34 +306,6 @@ class CoreAccessResolverTest extends TestCase
         $this->assertSame('Allowed by team scope and role capability.', $decision->reason);
     }
 
-    private function createScopedAccess(): array
-    {
-        $user = $this->user('scoped');
-        $module = $this->module('inventory');
-        $permission = $this->permission('inventory.records.edit', $module, true);
-        $role = $this->role('inventory_editor', $module, $permission);
-        $team = $this->team('REGION-OPS');
-
-        $this->membership($user, $team, $role, $module);
-        $this->scope($team, $module, 'region', 10);
-
-        return [$user, $module, $permission, $role, $team];
-    }
-
-    private function createScopedPageAccess(string $suffix): array
-    {
-        $user = $this->user("page-{$suffix}");
-        $module = $this->module('inventory');
-        $node = $this->node($module, "inventory.records.{$suffix}");
-        $permission = $this->permission("inventory.records.{$suffix}.view", $module, true, $node);
-        $role = $this->role("page_{$suffix}_viewer", $module, $permission);
-        $team = $this->team("PAGE-{$suffix}");
-
-        $this->membership($user, $team, $role, $module);
-
-        return [$user, $module, $permission, $node, $role, $team];
-    }
-
     public function test_inactive_user_is_denied_and_has_no_capabilities(): void
     {
         $user = $this->user('inactive-user');
@@ -396,6 +368,59 @@ class CoreAccessResolverTest extends TestCase
         );
     }
 
+    public function test_disabled_module_has_no_capabilities_or_visible_modules(): void
+    {
+        $user = $this->user('disabled-module-user');
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+            attributes: [
+                'is_enabled' => false,
+            ],
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities(
+                $user,
+                'inventory',
+            )->all(),
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities($user)->all(),
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->visibleModules($user)->all(),
+        );
+    }
+
     public function test_inactive_operator_global_permission_does_not_bypass_scope(): void
     {
         $user = $this->user('inactive-global');
@@ -430,39 +455,125 @@ class CoreAccessResolverTest extends TestCase
         $this->assertFalse($decision->allowed);
     }
 
-
-    public function test_navigation_excludes_node_with_inactive_permission(): void
+    public function test_disabled_module_denies_access_node_entry(): void
     {
-        $user = $this->user('inactive-nav');
+        $user = $this->user();
+
         $module = $this->module(
             'inventory',
             requiresScope: false,
+            attributes: [
+                'is_enabled' => false,
+            ],
         );
-        $root = $this->node($module, 'inventory', type: 'module');
-        $records = $this->node(
+
+        $node = $this->node(
             $module,
             'inventory.records',
-            $root,
         );
 
         $permission = $this->permission(
             'inventory.records.view',
             $module,
-            node: $records,
-            attributes: ['is_active' => false],
+            node: $node,
         );
 
-        $role = $this->role('viewer', $module, $permission);
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
         $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->canEnterAccessNode(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Module is not enabled.',
+            $decision->reason,
+        );
+    }
+
+    public function test_disabled_module_is_denied(): void
+    {
+        $user = $this->user();
+
+        $module = $this->module(
+            'inventory',
+            attributes: [
+                'is_enabled' => false,
+            ],
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check($user, $permission->name);
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Module is not enabled.',
+            $decision->reason,
+        );
+    }
+
+    private function createScopedAccess(): array
+    {
+        $user = $this->user('scoped');
+        $module = $this->module('inventory');
+        $permission = $this->permission('inventory.records.edit', $module, true);
+        $role = $this->role('inventory_editor', $module, $permission);
+        $team = $this->team('REGION-OPS');
+
+        $this->membership($user, $team, $role, $module);
+        $this->scope($team, $module, 'region', 10);
+
+        return [$user, $module, $permission, $role, $team];
+    }
+
+    private function createScopedPageAccess(string $suffix): array
+    {
+        $user = $this->user("page-{$suffix}");
+        $module = $this->module('inventory');
+        $node = $this->node($module, "inventory.records.{$suffix}");
+        $permission = $this->permission("inventory.records.{$suffix}.view", $module, true, $node);
+        $role = $this->role("page_{$suffix}_viewer", $module, $permission);
+        $team = $this->team("PAGE-{$suffix}");
 
         $this->membership($user, $team, $role, $module);
 
-        $flat = $this->flattenCodes(
-            app(CoreNavigationResolver::class)
-                ->forUser($user, 'inventory')
-        );
-
-        $this->assertNotContains($records->code, $flat);
+        return [$user, $module, $permission, $node, $role, $team];
     }
-
 }

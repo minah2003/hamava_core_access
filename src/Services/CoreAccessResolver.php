@@ -26,8 +26,8 @@ class CoreAccessResolver
         array|ResourceDescriptor|null $resource = null,
         ?string $moduleCode = null,
     ): AccessDecision {
-       if (! $this->userIsActive($user)) {
-        return AccessDecision::deny('User is not active.');
+        if (! $this->userIsActive($user)) {
+            return AccessDecision::deny('User is not active.');
         }
 
         $moduleCode ??= str($capability)->before('.')->toString();
@@ -44,16 +44,23 @@ class CoreAccessResolver
 
         $permission->loadMissing('accessNode');
         $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
+
+        $module = CoreModule::query()
+            ->where('code', $moduleCode)
+            ->first();
+
+        if (! $module) {
+            return AccessDecision::deny('Module is not defined.');
+        }
+
+        if (! $module->is_enabled) {
+            return AccessDecision::deny('Module is not enabled.');
+        }
+
         $memberships = $this->scopes->activeMemberships($user);
 
         if ($memberships->isEmpty()) {
             return AccessDecision::deny('User has no active team memberships.');
-        }
-
-        $module = CoreModule::query()->where('code', $moduleCode)->first();
-
-        if (! $module) {
-            return AccessDecision::deny('Module is not defined.');
         }
 
         $roleAssignments = $this->roleAssignmentsWithCapability($memberships, $capability, $moduleCode);
@@ -121,8 +128,8 @@ class CoreAccessResolver
     }
 
     /**
-    * @phpstan-assert-if-true Authenticatable $user
-    */
+     * @phpstan-assert-if-true Authenticatable $user
+     */
     private function userIsActive(?Authenticatable $user): bool
     {
         return $user !== null
@@ -142,7 +149,6 @@ class CoreAccessResolver
 
         $permission = CorePermission::query()->where('name', $capability)->first();
 
-
         if (! $permission) {
             return AccessDecision::deny('Capability is not defined.');
         }
@@ -154,10 +160,15 @@ class CoreAccessResolver
         $permission->loadMissing('accessNode', 'module');
         $moduleCode ??= $permission->module?->code ?? str($capability)->before('.')->toString();
         $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
+
         $module = CoreModule::query()->where('code', $moduleCode)->first();
 
         if (! $module) {
             return AccessDecision::deny('Module is not defined.');
+        }
+
+        if (! $module->is_enabled) {
+            return AccessDecision::deny('Module is not enabled.');
         }
 
         $memberships = $this->scopes->activeMemberships($user);
@@ -213,28 +224,54 @@ class CoreAccessResolver
     /**
      * @return Collection<int, string>
      */
-    public function capabilities(?Authenticatable $user, ?string $moduleCode = null): Collection
-    {
+    public function capabilities(
+        ?Authenticatable $user,
+        ?string $moduleCode = null,
+    ): Collection {
         if (! $this->userIsActive($user)) {
             return collect();
         }
 
-        return $this->activeEffectiveRoleAssignments($this->scopes->activeMemberships($user), $moduleCode)
-            ->flatMap(fn (array $assignment) => $assignment['role']?->permissions ?? collect())
+        if ($moduleCode !== null) {
+            $module = CoreModule::query()
+                ->where('code', $moduleCode)
+                ->first();
+
+            if (! $module || ! $module->is_enabled) {
+                return collect();
+            }
+
+            $enabledModuleIds = collect([$module->getKey()]);
+        } else {
+            $enabledModuleIds = CoreModule::query()
+                ->where('is_enabled', true)
+                ->pluck('id');
+        }
+
+        return $this->activeEffectiveRoleAssignments(
+            $this->scopes->activeMemberships($user),
+            $moduleCode,
+        )
+            ->flatMap(
+                fn (array $assignment) => $assignment['role']?->permissions ?? collect()
+            )
             ->filter(
-                fn (CorePermission $permission): bool =>
-                    (bool) $permission->is_active
+                fn (CorePermission $permission): bool => (bool) $permission->is_active
+                    && (
+                        $permission->module_id === null
+                        || $enabledModuleIds->contains(
+                            $permission->module_id
+                        )
+                    )
             )
             ->when(
                 $moduleCode,
-                fn (Collection $permissions) =>
-                    $permissions->filter(
-                        fn (CorePermission $permission): bool =>
-                            str_starts_with(
-                                $permission->name,
-                                "{$moduleCode}.",
-                            )
+                fn (Collection $permissions) => $permissions->filter(
+                    fn (CorePermission $permission): bool => str_starts_with(
+                        $permission->name,
+                        "{$moduleCode}.",
                     )
+                )
             )
             ->pluck('name')
             ->unique()
@@ -297,14 +334,12 @@ class CoreAccessResolver
     private function roleAssignmentsWithCapability(Collection $memberships, string $capability, string $moduleCode): Collection
     {
         return $this->activeEffectiveRoleAssignments($memberships, $moduleCode)
-                    ->filter(
-                        fn (array $assignment): bool =>
-                            ($assignment['role']?->permissions ?? collect())
-                                ->contains(
-                                    fn (CorePermission $permission): bool =>
-                                        (bool) $permission->is_active
-                                        && $permission->name === $capability
-                                ))
+            ->filter(
+                fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())
+                    ->contains(
+                        fn (CorePermission $permission): bool => (bool) $permission->is_active
+                            && $permission->name === $capability
+                    ))
             ->values();
     }
 
@@ -432,16 +467,14 @@ class CoreAccessResolver
             ->map(function (CoreTeamMember $membership) use ($moduleCode): ?array {
                 $roles = $this->activeEffectiveRoleAssignments(collect([$membership]), $moduleCode)
                     ->filter(
-                        fn (array $assignment): bool =>
-                            ($assignment['role']?->permissions ?? collect())
-                                ->contains(
-                                    fn (CorePermission $permission): bool =>
-                                        (bool) $permission->is_active
-                                        && str_starts_with(
-                                            $permission->name,
-                                            "{$moduleCode}.",
-                                        )
-                                ))
+                        fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())
+                            ->contains(
+                                fn (CorePermission $permission): bool => (bool) $permission->is_active
+                                    && str_starts_with(
+                                        $permission->name,
+                                        "{$moduleCode}.",
+                                    )
+                            ))
                     ->map(fn (array $assignment) => $assignment['role']->display_name ?: $assignment['role']->name)
                     ->unique()
                     ->values();
@@ -474,17 +507,15 @@ class CoreAccessResolver
             ->values();
 
         return $this->activeEffectiveRoleAssignments($memberships, $moduleCode)
-                ->filter(
-                    fn (array $assignment): bool =>
-                        ($assignment['role']?->permissions ?? collect())
-                            ->contains(
-                                fn (CorePermission $permission): bool =>
-                                    (bool) $permission->is_active
-                                    && $globalPermissions->contains(
-                                        $permission->name
-                                    )
-                            ))
-                ->values();
+            ->filter(
+                fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())
+                    ->contains(
+                        fn (CorePermission $permission): bool => (bool) $permission->is_active
+                            && $globalPermissions->contains(
+                                $permission->name
+                            )
+                    ))
+            ->values();
     }
 
     /**

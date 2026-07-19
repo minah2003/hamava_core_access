@@ -28,6 +28,40 @@ class CoreNavigationResolverTest extends TestCase
         $this->assertNotContains($reports->code, $flat);
     }
 
+    public function test_navigation_excludes_node_with_inactive_permission(): void
+    {
+        $user = $this->user('inactive-nav');
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+        $root = $this->node($module, 'inventory', type: 'module');
+        $records = $this->node(
+            $module,
+            'inventory.records',
+            $root,
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            node: $records,
+            attributes: ['is_active' => false],
+        );
+
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $flat = $this->flattenCodes(
+            app(CoreNavigationResolver::class)
+                ->forUser($user, 'inventory')
+        );
+
+        $this->assertNotContains($records->code, $flat);
+    }
+
     public function test_navigation_shows_only_nodes_with_matching_node_specific_scope(): void
     {
         $user = $this->user('scoped-navigator');
@@ -49,6 +83,57 @@ class CoreNavigationResolverTest extends TestCase
         $this->assertContains($root->code, $flat);
         $this->assertContains($records->code, $flat);
         $this->assertNotContains($assets->code, $flat);
+    }
+
+    public function test_navigation_is_empty_for_disabled_module(): void
+    {
+        $user = $this->user('disabled-navigation');
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+            attributes: [
+                'is_enabled' => false,
+            ],
+        );
+
+        $root = $this->node(
+            $module,
+            'inventory',
+            type: 'module',
+        );
+
+        $records = $this->node(
+            $module,
+            'inventory.records',
+            $root,
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            node: $records,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $navigation = app(CoreNavigationResolver::class)
+            ->forUser($user, 'inventory');
+
+        $this->assertSame([], $navigation->all());
     }
 
     private function flattenCodes($items): array

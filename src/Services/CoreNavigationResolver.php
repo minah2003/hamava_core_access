@@ -23,9 +23,11 @@ class CoreNavigationResolver
             return collect();
         }
 
-        $module = CoreModule::query()->where('code', $moduleCode)->first();
+        $module = CoreModule::query()
+            ->where('code', $moduleCode)
+            ->first();
 
-        if (! $module) {
+        if (! $module || ! $module->is_enabled) {
             return collect();
         }
 
