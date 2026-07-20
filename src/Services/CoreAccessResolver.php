@@ -16,7 +16,10 @@ use Illuminate\Support\Collection;
 
 class CoreAccessResolver
 {
-    public function __construct(private readonly TeamScopeResolver $scopes) {}
+    public function __construct(
+    private readonly TeamScopeResolver $scopes,
+    private readonly CoreAccessContext $context,
+) {}
 
     /**
      * @param  array<string, mixed>|DescribesCoreResource|ResourceDescriptor|null  $resource
@@ -33,7 +36,7 @@ class CoreAccessResolver
 
         $moduleCode ??= str($capability)->before('.')->toString();
         $descriptor = ResourceDescriptor::from($resource, $moduleCode);
-        $permission = CorePermission::query()->where('name', $capability)->first();
+        $permission = $this->context->permission($capability);
 
         if (! $permission) {
             return AccessDecision::deny('Capability is not defined.');
@@ -43,12 +46,10 @@ class CoreAccessResolver
             return AccessDecision::deny('Capability is not active.');
         }
 
-        $permission->loadMissing('accessNode');
+      
         $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
 
-        $module = CoreModule::query()
-            ->where('code', $moduleCode)
-            ->first();
+    $module = $this->context->module($moduleCode);
 
         if (! $module) {
             return AccessDecision::deny('Module is not defined.');
@@ -155,7 +156,7 @@ class CoreAccessResolver
             return AccessDecision::deny('User is not active.');
         }
 
-        $permission = CorePermission::query()->where('name', $capability)->first();
+        $permission = $this->context->permission($capability);
 
         if (! $permission) {
             return AccessDecision::deny('Capability is not defined.');
@@ -165,11 +166,11 @@ class CoreAccessResolver
             return AccessDecision::deny('Capability is not active.');
         }
 
-        $permission->loadMissing('accessNode', 'module');
+     
         $moduleCode ??= $permission->module?->code ?? str($capability)->before('.')->toString();
         $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
 
-        $module = CoreModule::query()->where('code', $moduleCode)->first();
+        $module = $this->context->module($moduleCode);
 
         if (! $module) {
             return AccessDecision::deny('Module is not defined.');
@@ -241,9 +242,7 @@ class CoreAccessResolver
         }
 
         if ($moduleCode !== null) {
-            $module = CoreModule::query()
-                ->where('code', $moduleCode)
-                ->first();
+           $module = $this->context->module($moduleCode);
 
             if (! $module || ! $module->is_enabled) {
                 return collect();
@@ -251,9 +250,9 @@ class CoreAccessResolver
 
             $enabledModuleIds = collect([$module->getKey()]);
         } else {
-            $enabledModuleIds = CoreModule::query()
-                ->where('is_enabled', true)
-                ->pluck('id');
+            $enabledModuleIds = $this->context
+    ->enabledModules()
+    ->pluck('id');
         }
 
         return $this->activeEffectiveRoleAssignments(
@@ -299,11 +298,8 @@ class CoreAccessResolver
         $memberships = $this->scopes->activeMemberships($user);
         $capabilities = $this->capabilities($user);
 
-        return CoreModule::query()
-            ->where('is_enabled', true)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
+        return $this->context
+    ->enabledModules()
             ->filter(function (CoreModule $module) use ($capabilities, $memberships): bool {
                 $hasCapability = $capabilities->contains(fn (string $capability): bool => str_starts_with($capability, "{$module->code}."));
 

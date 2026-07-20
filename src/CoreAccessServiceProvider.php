@@ -6,6 +6,7 @@ use Hamava\CoreAccess\Middleware\CoreCan;
 use Hamava\CoreAccess\Middleware\CoreNodeCan;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
 use Hamava\CoreAccess\Services\CoreNavigationResolver;
+use Hamava\CoreAccess\Services\CoreAccessContext;
 use Hamava\CoreAccess\Services\ScopeCatalogService;
 use Hamava\CoreAccess\Services\ScopeEntityOptionProvider;
 use Hamava\CoreAccess\Services\TeamScopeResolver;
@@ -18,9 +19,11 @@ class CoreAccessServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/core-access.php', 'core-access');
 
-        $this->app->singleton(TeamScopeResolver::class);
-        $this->app->singleton(CoreAccessResolver::class);
-        $this->app->singleton(CoreNavigationResolver::class);
+       $this->app->scoped(CoreAccessContext::class);
+$this->app->scoped(TeamScopeResolver::class);
+$this->app->scoped(CoreAccessResolver::class);
+$this->app->scoped(CoreNavigationResolver::class);
+
         $this->app->singleton(ScopeCatalogService::class);
         $this->app->singleton(ScopeEntityOptionProvider::class);
 

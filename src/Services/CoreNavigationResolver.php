@@ -3,16 +3,17 @@
 namespace Hamava\CoreAccess\Services;
 
 use Hamava\CoreAccess\Models\CoreAccessNode;
-use Hamava\CoreAccess\Models\CoreModule;
+
 use Hamava\CoreAccess\Models\CorePermission;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 
 class CoreNavigationResolver
 {
-    public function __construct(
-        private readonly CoreAccessResolver $access,
-    ) {}
+  public function __construct(
+    private readonly CoreAccessResolver $access,
+    private readonly CoreAccessContext $context,
+) {}
 
     /**
      * @return Collection<int, array<string, mixed>>
@@ -23,9 +24,7 @@ class CoreNavigationResolver
             return collect();
         }
 
-        $module = CoreModule::query()
-            ->where('code', $moduleCode)
-            ->first();
+        $module = $this->context->module($moduleCode);
 
         if (! $module || ! $module->is_enabled) {
             return collect();

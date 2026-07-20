@@ -136,6 +136,27 @@ results gracefully when these tables have not been created yet.
 - `Hamava\CoreAccess\Facades\CoreAccess`
 - `Hamava\CoreAccess\Facades\CoreNavigation`
 - `Hamava\CoreAccess\Middleware\CoreCan`
+- `Hamava\CoreAccess\Services\CoreAccessContext`
+
+## Request-scoped Authorization Context
+
+`CoreAccessContext` caches active memberships, modules, permissions, enabled
+modules, and active team scopes for the lifetime of one application request.
+
+`CoreAccessContext`, `TeamScopeResolver`, `CoreAccessResolver`, and
+`CoreNavigationResolver` are registered as scoped container services. Cached
+authorization state must not be stored in static properties or shared
+application-wide caches.
+
+The context represents a request-local authorization snapshot. When the
+application modifies memberships, role assignments, roles, permissions,
+modules, or team scopes and needs to authorize again during the same request,
+it must clear the snapshot:
+
+```php
+use Hamava\CoreAccess\Services\CoreAccessContext;
+
+app(CoreAccessContext::class)->flush();
 
 ## Domain Resource Contract
 
