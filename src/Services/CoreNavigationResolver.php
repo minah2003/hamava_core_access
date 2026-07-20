@@ -3,17 +3,16 @@
 namespace Hamava\CoreAccess\Services;
 
 use Hamava\CoreAccess\Models\CoreAccessNode;
-
 use Hamava\CoreAccess\Models\CorePermission;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 
 class CoreNavigationResolver
 {
-  public function __construct(
-    private readonly CoreAccessResolver $access,
-    private readonly CoreAccessContext $context,
-) {}
+    public function __construct(
+        private readonly CoreAccessResolver $access,
+        private readonly CoreAccessContext $context,
+    ) {}
 
     /**
      * @return Collection<int, array<string, mixed>>

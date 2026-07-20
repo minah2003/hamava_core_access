@@ -4,6 +4,7 @@ namespace Hamava\CoreAccess\Tests\Unit;
 
 use Hamava\CoreAccess\Data\ResourceDescriptor;
 use Hamava\CoreAccess\Models\CoreResourceGrant;
+use Hamava\CoreAccess\Services\CoreAccessContext;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
 use Hamava\CoreAccess\Tests\TestCase;
 
@@ -51,24 +52,68 @@ class CoreAccessResolverTest extends TestCase
     {
         $user = $this->user('team-role-dates');
         $module = $this->module('inventory');
-        $permission = $this->permission('inventory.records.view', $module);
-        $role = $this->role('date_viewer', $module, $permission);
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+        $role = $this->role(
+            'date_viewer',
+            $module,
+            $permission,
+        );
         $team = $this->team('DATE-ROLE');
 
         $this->teamMembership($user, $team);
-        $this->teamRole($team, $role, $module, ['valid_from' => today()->addDay()]);
-        $this->teamRole($team, $role, $module, ['valid_to' => today()->subDay()]);
+
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+            [
+                'valid_from' => today()->addDay(),
+            ],
+        );
+
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+            [
+                'valid_to' => today()->subDay(),
+            ],
+        );
 
         $resolver = app(CoreAccessResolver::class);
 
-        $this->assertFalse($resolver->can($user, $permission->name));
+        $this->assertFalse(
+            $resolver->can(
+                $user,
+                $permission->name,
+            ),
+        );
 
-        $this->teamRole($team, $role, $module, [
-            'valid_from' => today()->subDay(),
-            'valid_to' => today()->addDay(),
-        ]);
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+            [
+                'valid_from' => today()->subDay(),
+                'valid_to' => today()->addDay(),
+            ],
+        );
 
-        $this->assertTrue($resolver->can($user, $permission->name));
+        /*
+         * A new authorization assignment was created during the same
+         * request, so the request-local authorization snapshot is stale.
+         */
+        app(CoreAccessContext::class)->flush();
+
+        $this->assertTrue(
+            $resolver->can(
+                $user,
+                $permission->name,
+            ),
+        );
     }
 
     public function test_member_specific_role_still_grants_capability(): void

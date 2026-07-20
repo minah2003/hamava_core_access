@@ -11,33 +11,32 @@ use Illuminate\Support\Collection;
 
 class TeamScopeResolver
 {
-     public function __construct(
+    public function __construct(
         private readonly CoreAccessContext $context,
     ) {}
 
+    /**
+     * @return EloquentCollection<int, CoreTeamMember>
+     */
+    public function activeMemberships(
+        Authenticatable $user,
+    ): EloquentCollection {
+        return $this->context->memberships($user);
+    }
 
     /**
- * @return EloquentCollection<int, CoreTeamMember>
- */
-public function activeMemberships(
-    Authenticatable $user,
-): EloquentCollection {
-    return $this->context->memberships($user);
-}
-
-/**
- * @param  array<int|string>  $teamIds
- * @return EloquentCollection<int, CoreTeamScope>
- */
-public function activeScopesForTeams(
-    array $teamIds,
-    ?string $moduleCode = null,
-): EloquentCollection {
-    return $this->context->scopes(
-        $teamIds,
-        $moduleCode,
-    );
-}
+     * @param  array<int|string>  $teamIds
+     * @return EloquentCollection<int, CoreTeamScope>
+     */
+    public function activeScopesForTeams(
+        array $teamIds,
+        ?string $moduleCode = null,
+    ): EloquentCollection {
+        return $this->context->scopes(
+            $teamIds,
+            $moduleCode,
+        );
+    }
 
     /**
      * @param  array<int|string>  $teamIds

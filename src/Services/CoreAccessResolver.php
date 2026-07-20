@@ -17,9 +17,9 @@ use Illuminate\Support\Collection;
 class CoreAccessResolver
 {
     public function __construct(
-    private readonly TeamScopeResolver $scopes,
-    private readonly CoreAccessContext $context,
-) {}
+        private readonly TeamScopeResolver $scopes,
+        private readonly CoreAccessContext $context,
+    ) {}
 
     /**
      * @param  array<string, mixed>|DescribesCoreResource|ResourceDescriptor|null  $resource
@@ -46,10 +46,9 @@ class CoreAccessResolver
             return AccessDecision::deny('Capability is not active.');
         }
 
-      
         $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
 
-    $module = $this->context->module($moduleCode);
+        $module = $this->context->module($moduleCode);
 
         if (! $module) {
             return AccessDecision::deny('Module is not defined.');
@@ -166,7 +165,6 @@ class CoreAccessResolver
             return AccessDecision::deny('Capability is not active.');
         }
 
-     
         $moduleCode ??= $permission->module?->code ?? str($capability)->before('.')->toString();
         $accessNodeId = $permission->access_node_id !== null ? (int) $permission->access_node_id : null;
 
@@ -242,7 +240,7 @@ class CoreAccessResolver
         }
 
         if ($moduleCode !== null) {
-           $module = $this->context->module($moduleCode);
+            $module = $this->context->module($moduleCode);
 
             if (! $module || ! $module->is_enabled) {
                 return collect();
@@ -251,8 +249,8 @@ class CoreAccessResolver
             $enabledModuleIds = collect([$module->getKey()]);
         } else {
             $enabledModuleIds = $this->context
-    ->enabledModules()
-    ->pluck('id');
+                ->enabledModules()
+                ->pluck('id');
         }
 
         return $this->activeEffectiveRoleAssignments(
@@ -299,7 +297,7 @@ class CoreAccessResolver
         $capabilities = $this->capabilities($user);
 
         return $this->context
-    ->enabledModules()
+            ->enabledModules()
             ->filter(function (CoreModule $module) use ($capabilities, $memberships): bool {
                 $hasCapability = $capabilities->contains(fn (string $capability): bool => str_starts_with($capability, "{$module->code}."));
 

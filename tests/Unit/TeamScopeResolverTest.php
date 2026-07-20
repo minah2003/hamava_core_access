@@ -166,23 +166,23 @@ class TeamScopeResolverTest extends TestCase
     }
 
     public function test_unknown_module_code_returns_no_scopes(): void
-{
-    $module = $this->module('inventory');
-    $team = $this->team('UNKNOWN-MODULE');
+    {
+        $module = $this->module('inventory');
+        $team = $this->team('UNKNOWN-MODULE');
 
-    $this->scope(
-        $team,
-        $module,
-        'region',
-        10,
-    );
-
-    $scopes = app(TeamScopeResolver::class)
-        ->activeScopesForTeams(
-            [$team->id],
-            'missing-module',
+        $this->scope(
+            $team,
+            $module,
+            'region',
+            10,
         );
 
-    $this->assertTrue($scopes->isEmpty());
-}
+        $scopes = app(TeamScopeResolver::class)
+            ->activeScopesForTeams(
+                [$team->id],
+                'missing-module',
+            );
+
+        $this->assertTrue($scopes->isEmpty());
+    }
 }
