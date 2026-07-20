@@ -78,6 +78,38 @@ A matching team deny scope overrides an explicit resource allow.
 An explicit resource deny overrides both matching allow scopes and an
 operator-global capability.
 
+## Deprecated Row-Scanning Query Scope
+
+`Hamava\CoreAccess\Traits\ScopedByCoreTeam` and its
+`scopeVisibleToCore()` query scope are deprecated since version `0.2.0` and
+are scheduled for removal in version `1.0.0`.
+
+Do not add this trait to new domain models.
+
+The trait reads the entire model table and performs authorization checks for
+individual records in PHP. This causes excessive memory usage, repeated
+database queries, and incorrect pagination behavior on large tables.
+
+List authorization must be implemented as a domain-specific SQL query in the
+consuming application. The package cannot safely provide a generic query
+scope because it does not know how scope types map to domain columns.
+
+For example, after an FTTH-specific query service has resolved the complete
+allow and deny scope sets, it can translate them into SQL predicates:
+
+```php
+$query
+    ->whereIn('province_id', $allowedProvinceIds)
+    ->whereNotIn('province_id', $deniedProvinceIds);
+```
+
+The example is illustrative. The domain query service must also handle
+module-wide scopes, child scopes, access-node-specific scopes, explicit
+resource grants, and deny precedence.
+
+Existing uses may remain temporarily for backward compatibility, but they
+must be migrated before version `1.0.0`.
+
 ## Scope Catalogs
 
 Consuming applications own migrations for the dynamic scope catalog tables:
@@ -108,26 +140,32 @@ results gracefully when these tables have not been created yet.
 ## Domain Resource Contract
 
 Domain models that participate in resource-level authorization should
-implement:
+implement `Hamava\CoreAccess\Contracts\DescribesCoreResource`.
 
 ```php
-Hamava\CoreAccess\Contracts\DescribesCoreResource
-public function toCoreResourceDescriptor(): ResourceDescriptor
+use Hamava\CoreAccess\Contracts\DescribesCoreResource;
+use Hamava\CoreAccess\Data\ResourceDescriptor;
+use Illuminate\Database\Eloquent\Model;
+
+final class InventoryRecord extends Model implements DescribesCoreResource
 {
-    return ResourceDescriptor::make(
-        module_code: 'inventory',
-        resource_type: 'record',
-        resource_id: $this->getKey(),
-        attributes: [
-            'region_id' => $this->region_id,
-        ],
-    );
+    public function toCoreResourceDescriptor(): ResourceDescriptor
+    {
+        return ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: $this->getKey(),
+            attributes: [
+                'region_id' => $this->region_id,
+            ],
+        );
+    }
 }
+```
 
 Arbitrary objects are not converted automatically. Resource checks accept
-arrays, ResourceDescriptor instances, or objects implementing
-DescribesCoreResource.
-```
+arrays, `ResourceDescriptor` instances, or objects implementing
+`DescribesCoreResource`.
 
 ## Development
 
