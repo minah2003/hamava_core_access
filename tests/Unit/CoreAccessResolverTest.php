@@ -656,6 +656,248 @@ class CoreAccessResolverTest extends TestCase
         );
     }
 
+    public function test_scoped_permission_without_resource_is_denied(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+            $role,
+            $team,
+        ] = $this->createScopedAccess();
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Capability requires a resource scope.',
+            $decision->reason,
+        );
+
+        $this->assertNotEmpty(
+            $decision->matched['role_ids'],
+        );
+
+        $this->assertSame(
+            [],
+            $decision->matched['scope_ids'],
+        );
+
+        $this->assertSame(
+            [],
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
+    public function test_resource_allow_grant_allows_when_no_allow_scope_matches(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+            $role,
+            $team,
+        ] = $this->createScopedAccess();
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'allow',
+        ]);
+
+        $resource = ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertTrue(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Allowed by explicit resource grant.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+
+        $this->assertSame(
+            [],
+            $decision->matched['scope_ids'],
+        );
+    }
+
+    public function test_deny_scope_overrides_resource_allow_grant(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+            $role,
+            $team,
+        ] = $this->createScopedAccess();
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'allow',
+        ]);
+
+        $denyScope = $this->scope(
+            $team,
+            $module,
+            'region',
+            999,
+            'deny',
+        );
+
+        $resource = ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertFalse(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Denied by team scope.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $denyScope->id,
+            $decision->matched['scope_ids'],
+        );
+
+        $this->assertNotContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
+    public function test_explicit_resource_deny_overrides_operator_global_permission(): void
+    {
+        $user = $this->user(
+            'global-resource-deny',
+        );
+
+        $module = $this->module(
+            'inventory',
+        );
+
+        $editPermission = $this->permission(
+            'inventory.records.edit',
+            $module,
+            requiresScope: true,
+        );
+
+        $globalPermission = $this->permission(
+            'inventory.operator_global',
+            $module,
+        );
+
+        $role = $this->role(
+            'inventory_operator_with_deny',
+            $module,
+            $globalPermission,
+        );
+
+        $team = $this->team(
+            'GLOBAL-RESOURCE-DENY',
+        );
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $editPermission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'deny',
+        ]);
+
+        $resource = ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $editPermission->name,
+                $resource,
+            );
+
+        $this->assertFalse(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Denied by explicit resource grant.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
     private function createScopedAccess(): array
     {
         $user = $this->user('scoped');

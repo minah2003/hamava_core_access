@@ -58,6 +58,26 @@ Scope enforcement is still controlled by `permissions.requires_scope` or
 `core_access_nodes.requires_scope`. Catalog rules do not enforce access by
 themselves.
 
+## Authorization Decision Precedence
+
+For resource-scoped capabilities, authorization decisions use the following
+precedence:
+
+1. Explicit resource deny
+2. Matching team deny scope
+3. Operator-global capability
+4. Explicit resource allow
+5. Matching team allow scope
+6. Deny when no allow rule matches
+
+An explicit resource allow does not grant a capability by itself. The user
+must first receive the capability through an active role assignment.
+
+A matching team deny scope overrides an explicit resource allow.
+
+An explicit resource deny overrides both matching allow scopes and an
+operator-global capability.
+
 ## Scope Catalogs
 
 Consuming applications own migrations for the dynamic scope catalog tables:
