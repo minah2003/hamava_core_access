@@ -298,6 +298,67 @@ class CoreAccessContextTest extends TestCase
         );
     }
 
+    public function test_permissions_can_be_primed_for_batch_access_checks(): void
+    {
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+
+        $node = $this->node(
+            $module,
+            'inventory.records',
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            node: $node,
+        );
+
+        $permission->load([
+            'module',
+            'accessNode',
+        ]);
+
+        $context = app(CoreAccessContext::class);
+
+        $context->primePermissions([
+            $permission,
+        ]);
+
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $resolvedPermission = $context->permission(
+            $permission->name,
+        );
+
+        $resolvedModule = $context->module(
+            $module->code,
+        );
+
+        $queryCount = count(DB::getQueryLog());
+
+        DB::disableQueryLog();
+
+        $this->assertSame(
+            $permission,
+            $resolvedPermission,
+        );
+
+        $this->assertSame(
+            $permission->module,
+            $resolvedModule,
+        );
+
+        $this->assertSame(
+            0,
+            $queryCount,
+        );
+    }
+
     public function test_flush_reloads_authorization_data(): void
     {
         $module = $this->module(

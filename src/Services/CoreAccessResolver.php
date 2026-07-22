@@ -229,6 +229,35 @@ class CoreAccessResolver
     }
 
     /**
+     * Resolve the unique capabilities that may be used to enter an access node.
+     *
+     * @param  iterable<array-key, string>  $capabilities
+     * @return Collection<int, string>
+     */
+    public function enterableCapabilities(
+        ?Authenticatable $user,
+        iterable $capabilities,
+        string $moduleCode,
+    ): Collection {
+        return collect($capabilities)
+            ->filter(
+                fn (mixed $capability): bool => is_string($capability)
+                    && $capability !== ''
+            )
+            ->unique()
+            ->filter(
+                fn (string $capability): bool => $this
+                    ->canEnterAccessNode(
+                        $user,
+                        $capability,
+                        $moduleCode,
+                    )
+                    ->allowed
+            )
+            ->values();
+    }
+
+    /**
      * @return Collection<int, string>
      */
     public function capabilities(

@@ -943,6 +943,59 @@ class CoreAccessResolverTest extends TestCase
         );
     }
 
+    public function test_enterable_capabilities_returns_only_unique_allowed_capabilities(): void
+    {
+        $user = $this->user('batch-capabilities');
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+
+        $allowedPermission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $unassignedPermission = $this->permission(
+            'inventory.records.delete',
+            $module,
+        );
+
+        $role = $this->role(
+            'batch_viewer',
+            $module,
+            $allowedPermission,
+        );
+
+        $team = $this->team('BATCH-CAPABILITIES');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $enterable = app(CoreAccessResolver::class)
+            ->enterableCapabilities(
+                $user,
+                [
+                    $allowedPermission->name,
+                    $unassignedPermission->name,
+                    $allowedPermission->name,
+                ],
+                $module->code,
+            );
+
+        $this->assertSame(
+            [
+                $allowedPermission->name,
+            ],
+            $enterable->all(),
+        );
+    }
+
     private function createScopedAccess(): array
     {
         $user = $this->user('scoped');

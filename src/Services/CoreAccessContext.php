@@ -92,21 +92,46 @@ final class CoreAccessContext
             ->where('name', $name)
             ->first();
 
-        $this->permissions[$name] = $permission;
+        if (! $permission) {
+            $this->permissions[$name] = null;
 
-        /*
-         * Permission already loaded its module. Put that module in the
-         * module cache so CoreAccessResolver does not query it again.
-         */
-        if ($permission?->module) {
-            $moduleCode = (string) $permission->module->code;
-
-            if (! array_key_exists($moduleCode, $this->modules)) {
-                $this->modules[$moduleCode] = $permission->module;
-            }
+            return null;
         }
 
+        $this->primePermissions([$permission]);
+
         return $permission;
+    }
+
+    /**
+     * Prime the request-local permission cache with models loaded in batch.
+     *
+     * Relations required by subsequent authorization checks, especially
+     * accessNode, must be eager-loaded by the caller.
+     *
+     * @param  iterable<array-key, CorePermission>  $permissions
+     */
+    public function primePermissions(iterable $permissions): void
+    {
+        foreach ($permissions as $permission) {
+            $this->permissions[(string) $permission->name] = $permission;
+
+            if (! $permission->relationLoaded('module')) {
+                continue;
+            }
+
+            $module = $permission->getRelation('module');
+
+            if (! $module instanceof CoreModule) {
+                continue;
+            }
+
+            $moduleCode = (string) $module->code;
+
+            if (! array_key_exists($moduleCode, $this->modules)) {
+                $this->modules[$moduleCode] = $module;
+            }
+        }
     }
 
     /**

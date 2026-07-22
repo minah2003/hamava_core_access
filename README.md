@@ -158,6 +158,9 @@ use Hamava\CoreAccess\Services\CoreAccessContext;
 
 app(CoreAccessContext::class)->flush();
 
+```
+Normal read-only authorization requests do not need to call `flush()`.
+
 ## Domain Resource Contract
 
 Domain models that participate in resource-level authorization should
