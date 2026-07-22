@@ -225,6 +225,7 @@ class CoreNavigationResolver
                 'code' => $node->code,
                 'label' => $node->label,
                 'label_fa' => $node->label_fa,
+                'label_translation_key' => $node->label_translation_key,
                 'route_name' => $node->route_name,
                 'url_path' => $node->url_path,
                 'icon' => $node->icon,

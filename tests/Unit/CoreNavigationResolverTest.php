@@ -194,6 +194,98 @@ class CoreNavigationResolverTest extends TestCase
         $this->assertNotContains($reports->code, $flat);
     }
 
+    public function test_navigation_exposes_translation_key_and_keeps_legacy_labels(): void
+    {
+        $user = $this->user('translated-navigation');
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+
+        $root = $this->node(
+            $module,
+            'inventory',
+            type: 'module',
+        );
+
+        $records = $this->node(
+            $module,
+            'inventory.records',
+            $root,
+        );
+
+        $records->update([
+            'label' => 'Records',
+            'label_fa' => 'رکوردها',
+            'label_translation_key' => 'navigation.inventory.records',
+        ]);
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            node: $records,
+        );
+
+        $role = $this->role(
+            'translated_navigation_viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team('TRANSLATED-NAV');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $navigation = app(CoreNavigationResolver::class)
+            ->forUser(
+                $user,
+                $module->code,
+            );
+
+        $rootNode = $navigation->firstWhere(
+            'code',
+            $root->code,
+        );
+
+        $this->assertNotNull($rootNode);
+
+        $recordsNode = collect(
+            $rootNode['children'] ?? [],
+        )->firstWhere(
+            'code',
+            $records->code,
+        );
+
+        $this->assertNotNull($recordsNode);
+
+        /*
+         * Keep the existing labels for backward compatibility.
+         */
+        $this->assertSame(
+            'Records',
+            $recordsNode['label'],
+        );
+
+        $this->assertSame(
+            'رکوردها',
+            $recordsNode['label_fa'],
+        );
+
+        /*
+         * The package must expose the translation key without resolving it.
+         */
+        $this->assertSame(
+            'navigation.inventory.records',
+            $recordsNode['label_translation_key'],
+        );
+    }
+
     public function test_navigation_excludes_node_with_inactive_permission(): void
     {
         $user = $this->user('inactive-nav');
