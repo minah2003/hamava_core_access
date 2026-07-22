@@ -58,6 +58,24 @@ class CoreAccessResolver
             return AccessDecision::deny('Module is not enabled.');
         }
 
+        if (
+            $permission->module_id !== null
+            && (string) $permission->module_id !== (string) $module->getKey()
+        ) {
+            return AccessDecision::deny(
+                'Capability does not belong to the resolved module.',
+            );
+        }
+
+        if (
+            $descriptor !== null
+            && $descriptor->module_code !== (string) $module->code
+        ) {
+            return AccessDecision::deny(
+                'Resource does not belong to the resolved module.',
+            );
+        }
+
         $memberships = $this->scopes->activeMemberships($user);
 
         if ($memberships->isEmpty()) {
@@ -178,54 +196,130 @@ class CoreAccessResolver
             return AccessDecision::deny('Module is not enabled.');
         }
 
+        if (
+            $permission->module_id !== null
+            && (string) $permission->module_id !== (string) $module->getKey()
+        ) {
+            return AccessDecision::deny(
+                'Capability does not belong to the resolved module.',
+            );
+        }
+
         $memberships = $this->scopes->activeMemberships($user);
 
         if ($memberships->isEmpty()) {
             return AccessDecision::deny('User has no active team memberships.');
         }
+        $roleAssignments = $this->roleAssignmentsWithCapability(
+            $memberships,
+            $capability,
+            $moduleCode,
+        );
 
-        $roleAssignments = $this->roleAssignmentsWithCapability($memberships, $capability, $moduleCode);
-        $operatorGlobalAssignments = $this->operatorGlobalAssignments($memberships, $moduleCode);
+        $operatorGlobalAssignments = $this->operatorGlobalAssignments(
+            $memberships,
+            $moduleCode,
+        );
 
-        if ($roleAssignments->isEmpty() && $operatorGlobalAssignments->isEmpty()) {
-            return AccessDecision::deny('No active membership role grants this capability.');
+        if (
+            $roleAssignments->isEmpty()
+            && $operatorGlobalAssignments->isEmpty()
+        ) {
+            return AccessDecision::deny(
+                'No active membership role grants this capability.',
+            );
+        }
+
+        $effectiveAssignments = $this->mergeAssignments(
+            $roleAssignments,
+            $operatorGlobalAssignments,
+        );
+
+        $matched = $this->matchedFromAssignments(
+            $effectiveAssignments,
+        );
+
+        $requiresScope = (bool) $permission->requires_scope
+            || (bool) $permission->accessNode?->requires_scope;
+
+        if ($requiresScope) {
+            /*
+             * Deny scopes must be evaluated for every team participating in the
+             * effective decision, including teams granting operator-global access.
+             */
+            $denyTeamIds = $effectiveAssignments
+                ->pluck('team_id')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $denyScopes = $this->scopes
+                ->activePageEntryScopesForTeams(
+                    $denyTeamIds,
+                    $moduleCode,
+                    'deny',
+                    $accessNodeId,
+                )
+                ->where('scope_type', 'all')
+                ->values();
+
+            if ($denyScopes->isNotEmpty()) {
+                $matched['scope_ids'] = $denyScopes
+                    ->pluck('id')
+                    ->all();
+
+                return AccessDecision::deny(
+                    'Denied by team scope.',
+                    $matched,
+                );
+            }
         }
 
         if ($operatorGlobalAssignments->isNotEmpty()) {
             return AccessDecision::allow(
                 'Allowed by operator-global capability.',
-                $this->matchedFromAssignments($this->mergeAssignments($roleAssignments, $operatorGlobalAssignments)),
+                $matched,
             );
         }
 
-        $matched = $this->matchedFromAssignments($roleAssignments);
-        $requiresScope = (bool) $permission->requires_scope || (bool) $permission->accessNode?->requires_scope;
-
         if (! $requiresScope) {
-            return AccessDecision::allow('Allowed by team membership role capability.', $matched);
+            return AccessDecision::allow(
+                'Allowed by team membership role capability.',
+                $matched,
+            );
         }
 
-        $teamIds = $roleAssignments->pluck('team_id')->all();
-        $denyScopes = $this->scopes
-            ->activePageEntryScopesForTeams($teamIds, $moduleCode, 'deny', $accessNodeId)
-            ->where('scope_type', 'all')
-            ->values();
+        $allowTeamIds = $roleAssignments
+            ->pluck('team_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
-        if ($denyScopes->isNotEmpty()) {
-            $matched['scope_ids'] = $denyScopes->pluck('id')->all();
-
-            return AccessDecision::deny('Denied by team scope.', $matched);
-        }
-
-        $allowScopes = $this->scopes->activePageEntryScopesForTeams($teamIds, $moduleCode, 'allow', $accessNodeId);
+        $allowScopes = $this->scopes
+            ->activePageEntryScopesForTeams(
+                $allowTeamIds,
+                $moduleCode,
+                'allow',
+                $accessNodeId,
+            );
 
         if ($allowScopes->isEmpty()) {
-            return AccessDecision::deny('No matching scope for access node.', $matched);
+            return AccessDecision::deny(
+                'No matching scope for access node.',
+                $matched,
+            );
         }
 
-        $matched['scope_ids'] = $allowScopes->pluck('id')->all();
+        $matched['scope_ids'] = $allowScopes
+            ->pluck('id')
+            ->all();
 
-        return AccessDecision::allow('Allowed by team scope and role capability.', $matched);
+        return AccessDecision::allow(
+            'Allowed by team scope and role capability.',
+            $matched,
+        );
     }
 
     /**
@@ -577,6 +671,13 @@ class CoreAccessResolver
         ResourceDescriptor $resource,
         string $effect,
     ): Collection {
+
+        if (
+            blank($resource->resource_id)
+            && blank($resource->resource_code)
+        ) {
+            return collect();
+        }
         $principalPairs = collect([
             ['user', $user->getAuthIdentifier()],
             ...$assignments->pluck('team_id')->unique()->map(fn ($id) => ['team', $id])->all(),
@@ -591,13 +692,25 @@ class CoreAccessResolver
             ->where('resource_type', $resource->resource_type)
             ->where(function ($query) use ($resource): void {
                 $query
-                    ->when($resource->resource_id !== null, fn ($q) => $q->orWhere('resource_id', $resource->resource_id))
-                    ->when($resource->resource_code, fn ($q) => $q->orWhere('resource_code', $resource->resource_code));
+                    ->when(
+                        filled($resource->resource_id),
+                        fn ($q) => $q->orWhere(
+                            'resource_id',
+                            $resource->resource_id,
+                        ),
+                    )
+                    ->when(
+                        filled($resource->resource_code),
+                        fn ($q) => $q->orWhere(
+                            'resource_code',
+                            $resource->resource_code,
+                        ),
+                    );
             })
             ->active()
             ->get()
             ->filter(fn (CoreResourceGrant $grant): bool => $principalPairs->contains(fn (array $pair): bool => $grant->principal_type === $pair[0]
-                && (string) $grant->principal_id === (string) $pair[1]))
+                            && (string) $grant->principal_id === (string) $pair[1]))
             ->values();
     }
 }

@@ -943,6 +943,207 @@ class CoreAccessResolverTest extends TestCase
         );
     }
 
+    public function test_page_entry_deny_all_overrides_operator_global_permission(): void
+    {
+        $user = $this->user('page-global-deny');
+        $module = $this->module('inventory');
+        $node = $this->node($module, 'inventory.records');
+
+        $pagePermission = $this->permission(
+            'inventory.records.view',
+            $module,
+            requiresScope: true,
+            node: $node,
+        );
+
+        $globalPermission = $this->permission(
+            'inventory.operator_global',
+            $module,
+        );
+
+        $role = $this->role(
+            'page_global_operator',
+            $module,
+            $globalPermission,
+        );
+
+        $team = $this->team('PAGE-GLOBAL-DENY');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $denyScope = $this->scope(
+            $team,
+            $module,
+            'all',
+            null,
+            'deny',
+            $node,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->canEnterAccessNode(
+                $user,
+                $pagePermission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Denied by team scope.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $denyScope->id,
+            $decision->matched['scope_ids'],
+        );
+    }
+
+    public function test_resource_descriptor_for_another_module_is_denied(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+        ] = $this->createScopedAccess();
+
+        $billingModule = $this->module('billing');
+
+        $resource = ResourceDescriptor::make(
+            module_code: $billingModule->code,
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 10,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Resource does not belong to the resolved module.',
+            $decision->reason,
+        );
+    }
+
+    public function test_permission_from_another_module_is_denied(): void
+    {
+        $user = $this->user('cross-module-permission');
+
+        $inventoryModule = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+
+        $billingModule = $this->module(
+            'billing',
+            requiresScope: false,
+        );
+
+        /*
+         * The capability name says inventory, but its module_id deliberately
+         * points to billing. This represents inconsistent authorization data.
+         */
+        $permission = $this->permission(
+            'inventory.records.view',
+            $billingModule,
+        );
+
+        $role = $this->role(
+            'cross_module_permission_role',
+            $inventoryModule,
+            $permission,
+        );
+
+        $team = $this->team('CROSS-MODULE-PERMISSION');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $inventoryModule,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Capability does not belong to the resolved module.',
+            $decision->reason,
+        );
+    }
+
+    public function test_resource_grant_does_not_match_resource_without_identity(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+        ] = $this->createScopedAccess();
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'resource_code' => null,
+            'effect' => 'allow',
+        ]);
+
+        /*
+         * This descriptor has scope attributes, but it has no concrete resource
+         * identity. Therefore, no explicit resource grant may match it.
+         */
+        $resource = ResourceDescriptor::make(
+            module_code: $module->code,
+            resource_type: 'record',
+            resource_id: null,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'No matching scope for resource.',
+            $decision->reason,
+        );
+
+        $this->assertNotContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
     public function test_enterable_capabilities_returns_only_unique_allowed_capabilities(): void
     {
         $user = $this->user('batch-capabilities');
