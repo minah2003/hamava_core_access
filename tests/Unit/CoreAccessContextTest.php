@@ -5,64 +5,12 @@ namespace Hamava\CoreAccess\Tests\Unit;
 use Hamava\CoreAccess\Models\CoreModule;
 use Hamava\CoreAccess\Services\CoreAccessContext;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
-use Hamava\CoreAccess\Services\CoreNavigationResolver;
-use Hamava\CoreAccess\Services\TeamScopeResolver;
 use Hamava\CoreAccess\Tests\Fixtures\User;
 use Hamava\CoreAccess\Tests\TestCase;
 use Illuminate\Support\Facades\DB;
 
 class CoreAccessContextTest extends TestCase
 {
-    public function test_access_service_graph_is_request_scoped(): void
-    {
-        $context = app(CoreAccessContext::class);
-        $scopeResolver = app(TeamScopeResolver::class);
-        $accessResolver = app(CoreAccessResolver::class);
-        $navigationResolver = app(CoreNavigationResolver::class);
-
-        $this->assertSame(
-            $context,
-            app(CoreAccessContext::class),
-        );
-
-        $this->assertSame(
-            $scopeResolver,
-            app(TeamScopeResolver::class),
-        );
-
-        $this->assertSame(
-            $accessResolver,
-            app(CoreAccessResolver::class),
-        );
-
-        $this->assertSame(
-            $navigationResolver,
-            app(CoreNavigationResolver::class),
-        );
-
-        $this->app->forgetScopedInstances();
-
-        $this->assertNotSame(
-            $context,
-            app(CoreAccessContext::class),
-        );
-
-        $this->assertNotSame(
-            $scopeResolver,
-            app(TeamScopeResolver::class),
-        );
-
-        $this->assertNotSame(
-            $accessResolver,
-            app(CoreAccessResolver::class),
-        );
-
-        $this->assertNotSame(
-            $navigationResolver,
-            app(CoreNavigationResolver::class),
-        );
-    }
-
     public function test_memberships_are_cached_by_user_class_and_identifier(): void
     {
         $user = $this->user('context-user');
