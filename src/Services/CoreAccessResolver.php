@@ -15,11 +15,10 @@ use Illuminate\Support\Collection;
 class CoreAccessResolver
 {
     public function __construct(
-    private readonly TeamScopeResolver $scopes,
-    private readonly CoreAccessContext $context,
-    private readonly CoreCapabilityAssignmentResolver $assignments,
-) {}
-
+        private readonly TeamScopeResolver $scopes,
+        private readonly CoreAccessContext $context,
+        private readonly CoreCapabilityAssignmentResolver $assignments,
+    ) {}
 
     /**
      * @param  array<string, mixed>|DescribesCoreResource|ResourceDescriptor|null  $resource
@@ -280,6 +279,7 @@ class CoreAccessResolver
             $matched,
         );
     }
+
     /**
      * @phpstan-assert-if-true Authenticatable $user
      */
@@ -344,11 +344,13 @@ class CoreAccessResolver
         if ($memberships->isEmpty()) {
             return AccessDecision::deny('User has no active team memberships.');
         }
-        $roleAssignments = $this->roleAssignmentsWithCapability(
-            $memberships,
-            $capability,
-            $moduleCode,
-        );
+
+        $roleAssignments = $this->assignments
+            ->grantingCapability(
+                $memberships,
+                $capability,
+                $moduleCode,
+            );
 
         $operatorGlobalAssignments = $this->assignments->grantingOperatorGlobal(
             $memberships,
@@ -585,9 +587,6 @@ class CoreAccessResolver
             ])
             ->values();
     }
-    #################
-
-
 
     /**
      * @param  Collection<int, array<string, mixed>>  $assignments
@@ -614,7 +613,7 @@ class CoreAccessResolver
     {
         return $memberships
             ->map(function (CoreTeamMember $membership) use ($moduleCode): ?array {
-                $roles = $this->assignments->activeEffectiveRoleAssignments(collect([$membership]), $moduleCode)
+                $roles = $this->assignments->active(collect([$membership]), $moduleCode)
                     ->filter(
                         fn (array $assignment): bool => ($assignment['role']?->permissions ?? collect())
                             ->contains(
@@ -643,7 +642,7 @@ class CoreAccessResolver
             ->all();
     }
 
-     /**
+    /**
      * Filter resource grants that were already loaded and cached by
      * CoreAccessContext.
      *
@@ -672,12 +671,11 @@ class CoreAccessResolver
                 $resource->resource_type,
             )
             ->filter(
-                fn (CoreResourceGrant $grant): bool =>
-                    $this->assignments->grantAppliesTo(
-                        $grant,
-                        $user,
-                        $assignments,
-                    )
+                fn (CoreResourceGrant $grant): bool => $this->assignments->grantAppliesTo(
+                    $grant,
+                    $user,
+                    $assignments,
+                )
             )
             ->filter(
                 function (
@@ -698,6 +696,4 @@ class CoreAccessResolver
             )
             ->values();
     }
-
-
 }

@@ -6,7 +6,9 @@ use Hamava\CoreAccess\Middleware\CoreCan;
 use Hamava\CoreAccess\Middleware\CoreNodeCan;
 use Hamava\CoreAccess\Services\CoreAccessContext;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
+use Hamava\CoreAccess\Services\CoreCapabilityAssignmentResolver;
 use Hamava\CoreAccess\Services\CoreNavigationResolver;
+use Hamava\CoreAccess\Services\CoreQueryAuthorizationResolver;
 use Hamava\CoreAccess\Services\ScopeCatalogService;
 use Hamava\CoreAccess\Services\ScopeEntityOptionProvider;
 use Hamava\CoreAccess\Services\TeamScopeResolver;
@@ -51,6 +53,7 @@ class ServiceProviderTest extends TestCase
         $scopeResolver = app(TeamScopeResolver::class);
         $accessResolver = app(CoreAccessResolver::class);
         $navigationResolver = app(CoreNavigationResolver::class);
+        $queryAuthorizationResolver = app(CoreQueryAuthorizationResolver::class);
 
         /*
          * Within one request/application scope, every scoped binding
@@ -76,6 +79,11 @@ class ServiceProviderTest extends TestCase
             app(CoreNavigationResolver::class),
         );
 
+        $this->assertSame(
+            $queryAuthorizationResolver,
+            app(CoreQueryAuthorizationResolver::class),
+        );
+
         /*
          * Simulate the boundary between two HTTP requests or queue jobs.
          */
@@ -85,6 +93,7 @@ class ServiceProviderTest extends TestCase
         $newScopeResolver = app(TeamScopeResolver::class);
         $newAccessResolver = app(CoreAccessResolver::class);
         $newNavigationResolver = app(CoreNavigationResolver::class);
+        $newQueryAuthorizationResolver = app(CoreQueryAuthorizationResolver::class);
 
         $this->assertNotSame(
             $context,
@@ -106,6 +115,11 @@ class ServiceProviderTest extends TestCase
             $newNavigationResolver,
         );
 
+        $this->assertNotSame(
+            $queryAuthorizationResolver,
+            $newQueryAuthorizationResolver,
+        );
+
         /*
          * Aliases must resolve to the instances belonging to the
          * current scope, not instances retained from the old scope.
@@ -123,8 +137,14 @@ class ServiceProviderTest extends TestCase
 
     public function test_stateless_services_remain_singletons(): void
     {
+        $assignmentResolver = app(CoreCapabilityAssignmentResolver::class);
         $catalogService = app(ScopeCatalogService::class);
         $optionProvider = app(ScopeEntityOptionProvider::class);
+
+        $this->assertSame(
+            $assignmentResolver,
+            app(CoreCapabilityAssignmentResolver::class),
+        );
 
         $this->assertSame(
             $catalogService,
@@ -140,6 +160,11 @@ class ServiceProviderTest extends TestCase
          * Clearing scoped instances must not recreate singleton services.
          */
         $this->app->forgetScopedInstances();
+
+        $this->assertSame(
+            $assignmentResolver,
+            app(CoreCapabilityAssignmentResolver::class),
+        );
 
         $this->assertSame(
             $catalogService,

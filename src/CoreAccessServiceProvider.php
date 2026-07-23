@@ -6,13 +6,14 @@ use Hamava\CoreAccess\Middleware\CoreCan;
 use Hamava\CoreAccess\Middleware\CoreNodeCan;
 use Hamava\CoreAccess\Services\CoreAccessContext;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
+use Hamava\CoreAccess\Services\CoreCapabilityAssignmentResolver;
 use Hamava\CoreAccess\Services\CoreNavigationResolver;
+use Hamava\CoreAccess\Services\CoreQueryAuthorizationResolver;
 use Hamava\CoreAccess\Services\ScopeCatalogService;
 use Hamava\CoreAccess\Services\ScopeEntityOptionProvider;
 use Hamava\CoreAccess\Services\TeamScopeResolver;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
-use Hamava\CoreAccess\Services\CoreCapabilityAssignmentResolver;
 
 class CoreAccessServiceProvider extends ServiceProvider
 {
@@ -24,8 +25,9 @@ class CoreAccessServiceProvider extends ServiceProvider
         $this->app->scoped(TeamScopeResolver::class);
         $this->app->scoped(CoreAccessResolver::class);
         $this->app->scoped(CoreNavigationResolver::class);
-        $this->app->scoped(CoreCapabilityAssignmentResolver::class);
+        $this->app->scoped(CoreQueryAuthorizationResolver::class);
 
+        $this->app->singleton(CoreCapabilityAssignmentResolver::class);
         $this->app->singleton(ScopeCatalogService::class);
         $this->app->singleton(ScopeEntityOptionProvider::class);
 

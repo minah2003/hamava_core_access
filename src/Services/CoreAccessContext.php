@@ -4,20 +4,19 @@ namespace Hamava\CoreAccess\Services;
 
 use Hamava\CoreAccess\Models\CoreModule;
 use Hamava\CoreAccess\Models\CorePermission;
+use Hamava\CoreAccess\Models\CoreResourceGrant;
 use Hamava\CoreAccess\Models\CoreTeamMember;
 use Hamava\CoreAccess\Models\CoreTeamScope;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Hamava\CoreAccess\Models\CoreResourceGrant;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
 
 final class CoreAccessContext
 {
     public function __construct(
-    private readonly CoreCapabilityAssignmentResolver $assignments,
-) {}
-
+        private readonly CoreCapabilityAssignmentResolver $assignments,
+    ) {}
 
     /**
      * @var array<string, EloquentCollection<int, CoreTeamMember>>
@@ -40,9 +39,9 @@ final class CoreAccessContext
     private array $scopes = [];
 
     /**
- * @var array<string, EloquentCollection<int, CoreResourceGrant>>
- */
-private array $resourceGrants = [];
+     * @var array<string, EloquentCollection<int, CoreResourceGrant>>
+     */
+    private array $resourceGrants = [];
 
     /**
      * @var EloquentCollection<int, CoreModule>|null
@@ -79,8 +78,6 @@ private array $resourceGrants = [];
             )
             ->get();
     }
-
-
 
     public function module(string $code): ?CoreModule
     {
@@ -234,73 +231,73 @@ private array $resourceGrants = [];
         return $this->scopes[$key] = $query->get();
     }
 
-        /**
- * @param  Collection<int, array<string, mixed>>  $assignments
- * @return EloquentCollection<int, CoreResourceGrant>
- */
-public function resourceGrants(
-    Authenticatable $user,
-    Collection $assignments,
-    int|string $moduleId,
-    int|string $capabilityId,
-): EloquentCollection {
-    $principals = $this->assignments
-        ->principals($user, $assignments);
+    /**
+     * @param  Collection<int, array<string, mixed>>  $assignments
+     * @return EloquentCollection<int, CoreResourceGrant>
+     */
+    public function resourceGrants(
+        Authenticatable $user,
+        Collection $assignments,
+        int|string $moduleId,
+        int|string $capabilityId,
+    ): EloquentCollection {
+        $principals = $this->assignments
+            ->principals($user, $assignments);
 
-    $principalKey = $principals
-        ->map(
-            fn (array $principal): string => implode(':', [
-                $principal['type'],
-                (string) $principal['id'],
-            ])
-        )
-        ->sort()
-        ->implode(',');
+        $principalKey = $principals
+            ->map(
+                fn (array $principal): string => implode(':', [
+                    $principal['type'],
+                    (string) $principal['id'],
+                ])
+            )
+            ->sort()
+            ->implode(',');
 
-    $key = implode('|', [
-        (string) $moduleId,
-        (string) $capabilityId,
-        $principalKey,
-    ]);
+        $key = implode('|', [
+            (string) $moduleId,
+            (string) $capabilityId,
+            $principalKey,
+        ]);
 
-    if (array_key_exists($key, $this->resourceGrants)) {
-        return $this->resourceGrants[$key];
+        if (array_key_exists($key, $this->resourceGrants)) {
+            return $this->resourceGrants[$key];
+        }
+
+        $grants = CoreResourceGrant::query()
+            ->where('module_id', $moduleId)
+            ->where(
+                fn (Builder $query): Builder => $query
+                    ->whereNull('capability_id')
+                    ->orWhere('capability_id', $capabilityId)
+            )
+            ->where(function (Builder $query) use ($principals): void {
+                foreach ($principals as $principal) {
+                    $query->orWhere(
+                        function (Builder $principalQuery) use ($principal): void {
+                            $principalQuery
+                                ->where(
+                                    'principal_type',
+                                    $principal['type'],
+                                )
+                                ->where(
+                                    'principal_id',
+                                    (string) $principal['id'],
+                                );
+                        }
+                    );
+                }
+            })
+            ->active()
+            ->get()
+            ->filter(
+                fn (CoreResourceGrant $grant): bool => filled($grant->resource_id)
+                    || filled($grant->resource_code)
+            )
+            ->values();
+
+        return $this->resourceGrants[$key] = $grants;
     }
-
-    $grants = CoreResourceGrant::query()
-        ->where('module_id', $moduleId)
-        ->where(
-            fn (Builder $query): Builder => $query
-                ->whereNull('capability_id')
-                ->orWhere('capability_id', $capabilityId)
-        )
-        ->where(function (Builder $query) use ($principals): void {
-            foreach ($principals as $principal) {
-                $query->orWhere(
-                    function (Builder $principalQuery) use ($principal): void {
-                        $principalQuery
-                            ->where(
-                                'principal_type',
-                                $principal['type'],
-                            )
-                            ->where(
-                                'principal_id',
-                                (string) $principal['id'],
-                            );
-                    }
-                );
-            }
-        })
-        ->active()
-        ->get()
-        ->filter(
-            fn (CoreResourceGrant $grant): bool => filled($grant->resource_id)
-                || filled($grant->resource_code)
-        )
-        ->values();
-
-    return $this->resourceGrants[$key] = $grants;
-}
 
     /**
      * Clear the request-local authorization snapshot.
