@@ -7,10 +7,18 @@ use Hamava\CoreAccess\Models\CorePermission;
 use Hamava\CoreAccess\Models\CoreTeamMember;
 use Hamava\CoreAccess\Models\CoreTeamScope;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Hamava\CoreAccess\Models\CoreResourceGrant;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 final class CoreAccessContext
 {
+    public function __construct(
+    private readonly CoreCapabilityAssignmentResolver $assignments,
+) {}
+
+
     /**
      * @var array<string, EloquentCollection<int, CoreTeamMember>>
      */
@@ -30,6 +38,11 @@ final class CoreAccessContext
      * @var array<string, EloquentCollection<int, CoreTeamScope>>
      */
     private array $scopes = [];
+
+    /**
+ * @var array<string, EloquentCollection<int, CoreResourceGrant>>
+ */
+private array $resourceGrants = [];
 
     /**
      * @var EloquentCollection<int, CoreModule>|null
@@ -66,6 +79,8 @@ final class CoreAccessContext
             )
             ->get();
     }
+
+
 
     public function module(string $code): ?CoreModule
     {
@@ -219,11 +234,80 @@ final class CoreAccessContext
         return $this->scopes[$key] = $query->get();
     }
 
+        /**
+ * @param  Collection<int, array<string, mixed>>  $assignments
+ * @return EloquentCollection<int, CoreResourceGrant>
+ */
+public function resourceGrants(
+    Authenticatable $user,
+    Collection $assignments,
+    int|string $moduleId,
+    int|string $capabilityId,
+): EloquentCollection {
+    $principals = $this->assignments
+        ->principals($user, $assignments);
+
+    $principalKey = $principals
+        ->map(
+            fn (array $principal): string => implode(':', [
+                $principal['type'],
+                (string) $principal['id'],
+            ])
+        )
+        ->sort()
+        ->implode(',');
+
+    $key = implode('|', [
+        (string) $moduleId,
+        (string) $capabilityId,
+        $principalKey,
+    ]);
+
+    if (array_key_exists($key, $this->resourceGrants)) {
+        return $this->resourceGrants[$key];
+    }
+
+    $grants = CoreResourceGrant::query()
+        ->where('module_id', $moduleId)
+        ->where(
+            fn (Builder $query): Builder => $query
+                ->whereNull('capability_id')
+                ->orWhere('capability_id', $capabilityId)
+        )
+        ->where(function (Builder $query) use ($principals): void {
+            foreach ($principals as $principal) {
+                $query->orWhere(
+                    function (Builder $principalQuery) use ($principal): void {
+                        $principalQuery
+                            ->where(
+                                'principal_type',
+                                $principal['type'],
+                            )
+                            ->where(
+                                'principal_id',
+                                (string) $principal['id'],
+                            );
+                    }
+                );
+            }
+        })
+        ->active()
+        ->get()
+        ->filter(
+            fn (CoreResourceGrant $grant): bool => filled($grant->resource_id)
+                || filled($grant->resource_code)
+        )
+        ->values();
+
+    return $this->resourceGrants[$key] = $grants;
+}
+
     /**
      * Clear the request-local authorization snapshot.
      *
      * Call this after modifying memberships, assignments, roles,
-     * permissions, modules or scopes during the same request.
+     * permissions, modules, scopes or resource grants during the
+     * same request.
      */
     public function flush(): void
     {
@@ -231,6 +315,7 @@ final class CoreAccessContext
         $this->modules = [];
         $this->permissions = [];
         $this->scopes = [];
+        $this->resourceGrants = [];
         $this->enabledModules = null;
     }
 }
