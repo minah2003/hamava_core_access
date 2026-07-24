@@ -132,6 +132,8 @@ results gracefully when these tables have not been created yet.
 
 - `Hamava\CoreAccess\Services\CoreAccessResolver`
 - `Hamava\CoreAccess\Services\CoreNavigationResolver`
+- `Hamava\CoreAccess\Services\CoreQueryAuthorizationResolver`
+- `Hamava\CoreAccess\Data\QueryAuthorizationContext`
 - `Hamava\CoreAccess\Services\ScopeCatalogService`
 - `Hamava\CoreAccess\Services\ScopeEntityOptionProvider`
 - `Hamava\CoreAccess\Services\TeamScopeResolver`
@@ -140,20 +142,71 @@ results gracefully when these tables have not been created yet.
 - `Hamava\CoreAccess\Middleware\CoreNodeCan`
 - `Hamava\CoreAccess\Services\CoreAccessContext`
 
+## Query Authorization Context
+
+Consuming applications should inject `CoreQueryAuthorizationResolver` when they
+need to build an index, search, export, or pagination query from the user's
+authorization state:
+
+```php
+use Hamava\CoreAccess\Services\CoreQueryAuthorizationResolver;
+
+$context = $resolver->resolve(
+    $request->user(),
+    'ftth.projects.view',
+    'ftth',
+);
+```
+
+`resolve()` returns a `QueryAuthorizationContext` with these fields:
+
+- `capabilityGranted` means at least one active assignment grants the requested
+  capability.
+- `operatorGlobal` means at least one active assignment grants
+  operator-global access for the module.
+- `requiresScope` mirrors the permission or access-node scope requirement.
+- `allowScopes` contains active allow scopes restricted to teams whose
+  assignments grant the requested capability.
+- `denyScopes` contains active deny scopes from all effective assignments,
+  including assignments that grant operator-global access.
+- `allowResourceGrants` contains explicit resource allow grants that apply to
+  capability-granting principals.
+- `denyResourceGrants` contains explicit resource deny grants that apply to any
+  effective principal, including operator-global principals.
+- `denialReason` explains fail-closed setup failures such as inactive users,
+  undefined permissions, disabled modules, or module mismatches.
+- `hasBaseGrant()` is true only when the user has either the requested
+  capability or operator-global access.
+- `hasAnyAllowPath()` is false without a base grant and is also false when an
+  applicable `scope_type = all` deny scope blocks the whole query plan.
+
+Explicit resource grants are separated into allow and deny collections.
+Consuming applications must apply deny predicates before allow predicates.
+Entity-specific deny scopes and explicit resource denies do not necessarily
+mean that every row in a collection query is hidden; they are part of the plan
+the application translates into SQL.
+
+The package intentionally does not map domain scope types to SQL columns. Each
+application must implement that mapping in its own domain query service.
+`resolve()` is for collection and query planning. It does not replace
+`CoreAccess::check()` for authorizing one concrete resource.
+
 ## Request-scoped Authorization Context
 
 `CoreAccessContext` caches active memberships, modules, permissions, enabled
-modules, and active team scopes for the lifetime of one application request.
+modules, active team scopes, and resource grants for the lifetime of one
+application request.
 
 `CoreAccessContext`, `TeamScopeResolver`, `CoreAccessResolver`, and
-`CoreNavigationResolver` are registered as scoped container services. Cached
-authorization state must not be stored in static properties or shared
-application-wide caches.
+`CoreNavigationResolver` are registered as scoped container services.
+`CoreQueryAuthorizationResolver` is scoped as well, while the stateless
+assignment resolver is a singleton. Cached authorization state must not be
+stored in static properties or shared application-wide caches.
 
 The context represents a request-local authorization snapshot. When the
 application modifies memberships, role assignments, roles, permissions,
-modules, or team scopes and needs to authorize again during the same request,
-it must clear the snapshot:
+modules, team scopes, or resource grants and needs to authorize again during
+the same request, it must clear the snapshot:
 
 ```php
 use Hamava\CoreAccess\Services\CoreAccessContext;

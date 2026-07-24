@@ -2,6 +2,7 @@
 
 namespace Hamava\CoreAccess\Data;
 
+use Hamava\CoreAccess\Models\CoreResourceGrant;
 use Hamava\CoreAccess\Models\CoreTeamScope;
 use Illuminate\Support\Collection;
 
@@ -10,8 +11,8 @@ final class QueryAuthorizationContext
     /**
      * @param  Collection<int, CoreTeamScope>  $allowScopes
      * @param  Collection<int, CoreTeamScope>  $denyScopes
-     * @param  Collection<int, mixed>  $allowResourceGrants
-     * @param  Collection<int, mixed>  $denyResourceGrants
+     * @param  Collection<int, CoreResourceGrant>  $allowResourceGrants
+     * @param  Collection<int, CoreResourceGrant>  $denyResourceGrants
      */
     public function __construct(
         public readonly string $moduleCode,
