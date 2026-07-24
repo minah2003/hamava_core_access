@@ -12,8 +12,11 @@ Register the private VCS repository in the consuming Laravel application:
 
 ```bash
 composer config repositories.hamava-core-access vcs https://github.com/minah2003/hamava_core_access.git
-composer require hamava/core-access:^0.1
+composer require hamava/core-access:^0.2
 ```
+
+The 0.2 release supports PHP 8.3, 8.4, and 8.5 with Laravel / Illuminate 13,
+according to `composer.json`.
 
 Laravel package auto-discovery registers:
 
@@ -379,11 +382,18 @@ incorrect pagination. See
 Expected local checks:
 
 ```bash
-composer validate
-composer install
+composer validate --strict
+composer install --no-interaction --prefer-dist
 vendor/bin/phpunit
 vendor/bin/pint --test
+git diff --check
 ```
+
+GitHub Actions runs these checks for pull requests targeting `main`, pushes to
+`main`, pushes to `refactor/authorization-foundation` while that branch remains
+active, and version tags. Each trigger runs against PHP 8.3, 8.4, and 8.5.
+
+A release tag must only be created from a green, merged `main` commit.
 
 The test suite uses an in-memory database fixture and does not require package
 migrations.
