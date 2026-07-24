@@ -78,15 +78,18 @@ abstract class TestCase extends OrchestraTestCase
         ]);
     }
 
-    protected function module(string $code = 'inventory', bool $requiresScope = true): CoreModule
-    {
-        return CoreModule::query()->create([
+    protected function module(
+        string $code = 'inventory',
+        bool $requiresScope = true,
+        array $attributes = [],
+    ): CoreModule {
+        return CoreModule::query()->create(array_merge([
             'code' => $code,
             'name' => ucfirst($code),
             'requires_scope' => $requiresScope,
             'is_enabled' => true,
             'sort_order' => 1,
-        ]);
+        ], $attributes));
     }
 
     protected function node(CoreModule $module, string $code, ?CoreAccessNode $parent = null, string $type = 'page'): CoreAccessNode
@@ -96,6 +99,7 @@ abstract class TestCase extends OrchestraTestCase
             'parent_id' => $parent?->id,
             'code' => $code,
             'label' => ucfirst(str($code)->afterLast('.')->toString()),
+            'label_translation_key' => "navigation.{$code}",
             'node_type' => $type,
             'is_visible_in_navigation' => true,
             'requires_scope' => false,
@@ -103,16 +107,21 @@ abstract class TestCase extends OrchestraTestCase
         ]);
     }
 
-    protected function permission(string $name, CoreModule $module, bool $requiresScope = false, ?CoreAccessNode $node = null): CorePermission
-    {
-        return CorePermission::query()->create([
+    protected function permission(
+        string $name,
+        CoreModule $module,
+        bool $requiresScope = false,
+        ?CoreAccessNode $node = null,
+        array $attributes = [],
+    ): CorePermission {
+        return CorePermission::query()->create(array_merge([
             'name' => $name,
             'guard_name' => 'web',
             'module_id' => $module->id,
             'access_node_id' => $node?->id,
             'requires_scope' => $requiresScope,
             'is_active' => true,
-        ]);
+        ], $attributes));
     }
 
     protected function role(string $name, CoreModule $module, CorePermission ...$permissions): CoreRole
@@ -144,15 +153,20 @@ abstract class TestCase extends OrchestraTestCase
         ]);
     }
 
-    protected function membership(User $user, CoreTeam $team, CoreRole $role, CoreModule $module): CoreTeamMember
-    {
+    protected function membership(
+        User $user,
+        CoreTeam $team,
+        CoreRole $role,
+        CoreModule $module,
+        array $assignmentAttributes = [],
+    ): CoreTeamMember {
         $membership = $this->teamMembership($user, $team);
 
-        CoreTeamMemberRole::query()->create([
+        CoreTeamMemberRole::query()->create(array_merge([
             'team_member_id' => $membership->id,
             'role_id' => $role->id,
             'module_id' => $module->id,
-        ]);
+        ], $assignmentAttributes));
 
         return $membership;
     }
@@ -253,6 +267,7 @@ abstract class TestCase extends OrchestraTestCase
             $table->string('url_path')->nullable();
             $table->string('icon')->nullable();
             $table->boolean('requires_scope')->default(false);
+            $table->string('label_translation_key')->nullable();
             $table->boolean('is_visible_in_navigation')->default(true);
             $table->unsignedInteger('sort_order')->default(0);
             $table->json('metadata')->nullable();

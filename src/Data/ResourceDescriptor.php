@@ -2,6 +2,7 @@
 
 namespace Hamava\CoreAccess\Data;
 
+use Hamava\CoreAccess\Contracts\DescribesCoreResource;
 use Illuminate\Contracts\Support\Arrayable;
 
 class ResourceDescriptor implements Arrayable
@@ -31,28 +32,48 @@ class ResourceDescriptor implements Arrayable
     }
 
     /**
-     * @param  array<string, mixed>|object|null  $value
+     * @param  array<string, mixed>|DescribesCoreResource|self|null  $value
      */
-    public static function from(array|object|null $value, ?string $moduleCode = null): ?self
-    {
+    public static function from(
+        array|self|DescribesCoreResource|null $value,
+        ?string $moduleCode = null,
+    ): ?self {
         if ($value instanceof self) {
             return $value;
+        }
+
+        if ($value instanceof DescribesCoreResource) {
+            return $value->toCoreResourceDescriptor();
         }
 
         if ($value === null) {
             return null;
         }
 
-        $data = is_array($value) ? $value : get_object_vars($value);
-        $resource = $data['resource'] ?? $data;
-        $resource = is_array($resource) ? $resource : get_object_vars($resource);
+        $resource = $value['resource'] ?? $value;
 
         return new self(
-            module_code: (string) ($resource['module_code'] ?? $resource['module'] ?? $moduleCode ?? ''),
-            resource_type: (string) ($resource['resource_type'] ?? $resource['type'] ?? 'resource'),
-            resource_id: $resource['resource_id'] ?? $resource['id'] ?? null,
-            resource_code: $resource['resource_code'] ?? $resource['code'] ?? null,
-            attributes: (array) ($resource['attributes'] ?? []),
+            module_code: (string) (
+                $resource['module_code']
+                ?? $resource['module']
+                ?? $moduleCode
+                ?? ''
+            ),
+            resource_type: (string) (
+                $resource['resource_type']
+                ?? $resource['type']
+                ?? 'resource'
+            ),
+            resource_id: $resource['resource_id']
+                ?? $resource['id']
+                ?? null,
+            resource_code: $resource['resource_code']
+                ?? $resource['code']
+                ?? null,
+            attributes: (array) (
+                $resource['attributes']
+                ?? []
+            ),
         );
     }
 

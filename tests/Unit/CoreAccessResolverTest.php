@@ -4,6 +4,7 @@ namespace Hamava\CoreAccess\Tests\Unit;
 
 use Hamava\CoreAccess\Data\ResourceDescriptor;
 use Hamava\CoreAccess\Models\CoreResourceGrant;
+use Hamava\CoreAccess\Services\CoreAccessContext;
 use Hamava\CoreAccess\Services\CoreAccessResolver;
 use Hamava\CoreAccess\Tests\TestCase;
 
@@ -51,24 +52,68 @@ class CoreAccessResolverTest extends TestCase
     {
         $user = $this->user('team-role-dates');
         $module = $this->module('inventory');
-        $permission = $this->permission('inventory.records.view', $module);
-        $role = $this->role('date_viewer', $module, $permission);
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+        $role = $this->role(
+            'date_viewer',
+            $module,
+            $permission,
+        );
         $team = $this->team('DATE-ROLE');
 
         $this->teamMembership($user, $team);
-        $this->teamRole($team, $role, $module, ['valid_from' => today()->addDay()]);
-        $this->teamRole($team, $role, $module, ['valid_to' => today()->subDay()]);
+
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+            [
+                'valid_from' => today()->addDay(),
+            ],
+        );
+
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+            [
+                'valid_to' => today()->subDay(),
+            ],
+        );
 
         $resolver = app(CoreAccessResolver::class);
 
-        $this->assertFalse($resolver->can($user, $permission->name));
+        $this->assertFalse(
+            $resolver->can(
+                $user,
+                $permission->name,
+            ),
+        );
 
-        $this->teamRole($team, $role, $module, [
-            'valid_from' => today()->subDay(),
-            'valid_to' => today()->addDay(),
-        ]);
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+            [
+                'valid_from' => today()->subDay(),
+                'valid_to' => today()->addDay(),
+            ],
+        );
 
-        $this->assertTrue($resolver->can($user, $permission->name));
+        /*
+         * A new authorization assignment was created during the same
+         * request, so the request-local authorization snapshot is stale.
+         */
+        app(CoreAccessContext::class)->flush();
+
+        $this->assertTrue(
+            $resolver->can(
+                $user,
+                $permission->name,
+            ),
+        );
     }
 
     public function test_member_specific_role_still_grants_capability(): void
@@ -304,6 +349,852 @@ class CoreAccessResolverTest extends TestCase
 
         $this->assertTrue($decision->allowed);
         $this->assertSame('Allowed by team scope and role capability.', $decision->reason);
+    }
+
+    public function test_inactive_user_is_denied_and_has_no_capabilities(): void
+    {
+        $user = $this->user('inactive-user');
+        $module = $this->module();
+        $permission = $this->permission('inventory.records.view', $module);
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $user->update(['is_active' => false]);
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $this->assertFalse($resolver->can($user, $permission->name));
+        $this->assertSame([], $resolver->capabilities($user)->all());
+    }
+
+    public function test_inactive_permission_is_denied(): void
+    {
+        $user = $this->user();
+        $module = $this->module();
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            attributes: ['is_active' => false],
+        );
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $decision = app(CoreAccessResolver::class)
+            ->check($user, $permission->name);
+
+        $this->assertFalse($decision->allowed);
+        $this->assertSame('Capability is not active.', $decision->reason);
+    }
+
+    public function test_inactive_permission_is_excluded_from_capabilities(): void
+    {
+        $user = $this->user('inactive-capability');
+        $module = $this->module();
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            attributes: ['is_active' => false],
+        );
+        $role = $this->role('viewer', $module, $permission);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $capabilities = app(CoreAccessResolver::class)
+            ->capabilities($user, 'inventory');
+
+        $this->assertNotContains(
+            $permission->name,
+            $capabilities->all(),
+        );
+    }
+
+    public function test_disabled_module_has_no_capabilities_or_visible_modules(): void
+    {
+        $user = $this->user('disabled-module-user');
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+            attributes: [
+                'is_enabled' => false,
+            ],
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities(
+                $user,
+                'inventory',
+            )->all(),
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities($user)->all(),
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->visibleModules($user)->all(),
+        );
+    }
+
+    public function test_inactive_operator_global_permission_does_not_bypass_scope(): void
+    {
+        $user = $this->user('inactive-global');
+        $module = $this->module();
+        $edit = $this->permission(
+            'inventory.records.edit',
+            $module,
+            true,
+        );
+        $global = $this->permission(
+            'inventory.operator_global',
+            $module,
+            attributes: ['is_active' => false],
+        );
+        $role = $this->role('operator', $module, $global);
+        $team = $this->team();
+
+        $this->membership($user, $team, $role, $module);
+
+        $decision = app(CoreAccessResolver::class)->check(
+            $user,
+            $edit->name,
+            ResourceDescriptor::make(
+                'inventory',
+                'record',
+                15,
+                null,
+                ['region_id' => 999],
+            ),
+        );
+
+        $this->assertFalse($decision->allowed);
+    }
+
+    public function test_disabled_module_denies_access_node_entry(): void
+    {
+        $user = $this->user();
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+            attributes: [
+                'is_enabled' => false,
+            ],
+        );
+
+        $node = $this->node(
+            $module,
+            'inventory.records',
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+            node: $node,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->canEnterAccessNode(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Module is not enabled.',
+            $decision->reason,
+        );
+    }
+
+    public function test_disabled_module_is_denied(): void
+    {
+        $user = $this->user();
+
+        $module = $this->module(
+            'inventory',
+            attributes: [
+                'is_enabled' => false,
+            ],
+        );
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team();
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check($user, $permission->name);
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Module is not enabled.',
+            $decision->reason,
+        );
+    }
+
+    public function test_inactive_member_role_is_denied(): void
+    {
+        $user = $this->user('inactive-member-role');
+        $module = $this->module();
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team('INACTIVE-MEMBER-ROLE');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $role->update([
+            'is_active' => false,
+        ]);
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $decision = $resolver->check(
+            $user,
+            $permission->name,
+        );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'No active membership role grants this capability.',
+            $decision->reason,
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities(
+                $user,
+                $module->code,
+            )->all(),
+        );
+    }
+
+    public function test_inactive_team_level_role_is_denied(): void
+    {
+        $user = $this->user('inactive-team-role');
+        $module = $this->module();
+
+        $permission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $role = $this->role(
+            'team_viewer',
+            $module,
+            $permission,
+        );
+
+        $team = $this->team('INACTIVE-TEAM-ROLE');
+
+        $this->teamMembership(
+            $user,
+            $team,
+        );
+
+        $this->teamRole(
+            $team,
+            $role,
+            $module,
+        );
+
+        $role->update([
+            'is_active' => false,
+        ]);
+
+        $resolver = app(CoreAccessResolver::class);
+
+        $decision = $resolver->check(
+            $user,
+            $permission->name,
+        );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'No active membership role grants this capability.',
+            $decision->reason,
+        );
+
+        $this->assertSame(
+            [],
+            $resolver->capabilities(
+                $user,
+                $module->code,
+            )->all(),
+        );
+    }
+
+    public function test_scoped_permission_without_resource_is_denied(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+            $role,
+            $team,
+        ] = $this->createScopedAccess();
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Capability requires a resource scope.',
+            $decision->reason,
+        );
+
+        $this->assertNotEmpty(
+            $decision->matched['role_ids'],
+        );
+
+        $this->assertSame(
+            [],
+            $decision->matched['scope_ids'],
+        );
+
+        $this->assertSame(
+            [],
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
+    public function test_resource_allow_grant_allows_when_no_allow_scope_matches(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+            $role,
+            $team,
+        ] = $this->createScopedAccess();
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'allow',
+        ]);
+
+        $resource = ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertTrue(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Allowed by explicit resource grant.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+
+        $this->assertSame(
+            [],
+            $decision->matched['scope_ids'],
+        );
+    }
+
+    public function test_deny_scope_overrides_resource_allow_grant(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+            $role,
+            $team,
+        ] = $this->createScopedAccess();
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'allow',
+        ]);
+
+        $denyScope = $this->scope(
+            $team,
+            $module,
+            'region',
+            999,
+            'deny',
+        );
+
+        $resource = ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertFalse(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Denied by team scope.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $denyScope->id,
+            $decision->matched['scope_ids'],
+        );
+
+        $this->assertNotContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
+    public function test_explicit_resource_deny_overrides_operator_global_permission(): void
+    {
+        $user = $this->user(
+            'global-resource-deny',
+        );
+
+        $module = $this->module(
+            'inventory',
+        );
+
+        $editPermission = $this->permission(
+            'inventory.records.edit',
+            $module,
+            requiresScope: true,
+        );
+
+        $globalPermission = $this->permission(
+            'inventory.operator_global',
+            $module,
+        );
+
+        $role = $this->role(
+            'inventory_operator_with_deny',
+            $module,
+            $globalPermission,
+        );
+
+        $team = $this->team(
+            'GLOBAL-RESOURCE-DENY',
+        );
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $editPermission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'deny',
+        ]);
+
+        $resource = ResourceDescriptor::make(
+            module_code: 'inventory',
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $editPermission->name,
+                $resource,
+            );
+
+        $this->assertFalse(
+            $decision->allowed,
+        );
+
+        $this->assertSame(
+            'Denied by explicit resource grant.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
+    public function test_page_entry_deny_all_overrides_operator_global_permission(): void
+    {
+        $user = $this->user('page-global-deny');
+        $module = $this->module('inventory');
+        $node = $this->node($module, 'inventory.records');
+
+        $pagePermission = $this->permission(
+            'inventory.records.view',
+            $module,
+            requiresScope: true,
+            node: $node,
+        );
+
+        $globalPermission = $this->permission(
+            'inventory.operator_global',
+            $module,
+        );
+
+        $role = $this->role(
+            'page_global_operator',
+            $module,
+            $globalPermission,
+        );
+
+        $team = $this->team('PAGE-GLOBAL-DENY');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $denyScope = $this->scope(
+            $team,
+            $module,
+            'all',
+            null,
+            'deny',
+            $node,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->canEnterAccessNode(
+                $user,
+                $pagePermission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Denied by team scope.',
+            $decision->reason,
+        );
+
+        $this->assertContains(
+            $denyScope->id,
+            $decision->matched['scope_ids'],
+        );
+    }
+
+    public function test_resource_descriptor_for_another_module_is_denied(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+        ] = $this->createScopedAccess();
+
+        $billingModule = $this->module('billing');
+
+        $resource = ResourceDescriptor::make(
+            module_code: $billingModule->code,
+            resource_type: 'record',
+            resource_id: 15,
+            resource_code: null,
+            attributes: [
+                'region_id' => 10,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Resource does not belong to the resolved module.',
+            $decision->reason,
+        );
+    }
+
+    public function test_permission_from_another_module_is_denied(): void
+    {
+        $user = $this->user('cross-module-permission');
+
+        $inventoryModule = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+
+        $billingModule = $this->module(
+            'billing',
+            requiresScope: false,
+        );
+
+        /*
+         * The capability name says inventory, but its module_id deliberately
+         * points to billing. This represents inconsistent authorization data.
+         */
+        $permission = $this->permission(
+            'inventory.records.view',
+            $billingModule,
+        );
+
+        $role = $this->role(
+            'cross_module_permission_role',
+            $inventoryModule,
+            $permission,
+        );
+
+        $team = $this->team('CROSS-MODULE-PERMISSION');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $inventoryModule,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'Capability does not belong to the resolved module.',
+            $decision->reason,
+        );
+    }
+
+    public function test_resource_grant_does_not_match_resource_without_identity(): void
+    {
+        [
+            $user,
+            $module,
+            $permission,
+        ] = $this->createScopedAccess();
+
+        $grant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'resource_code' => null,
+            'effect' => 'allow',
+        ]);
+
+        /*
+         * This descriptor has scope attributes, but it has no concrete resource
+         * identity. Therefore, no explicit resource grant may match it.
+         */
+        $resource = ResourceDescriptor::make(
+            module_code: $module->code,
+            resource_type: 'record',
+            resource_id: null,
+            resource_code: null,
+            attributes: [
+                'region_id' => 999,
+            ],
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->check(
+                $user,
+                $permission->name,
+                $resource,
+            );
+
+        $this->assertFalse($decision->allowed);
+
+        $this->assertSame(
+            'No matching scope for resource.',
+            $decision->reason,
+        );
+
+        $this->assertNotContains(
+            $grant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+    }
+
+    public function test_enterable_capabilities_returns_only_unique_allowed_capabilities(): void
+    {
+        $user = $this->user('batch-capabilities');
+
+        $module = $this->module(
+            'inventory',
+            requiresScope: false,
+        );
+
+        $allowedPermission = $this->permission(
+            'inventory.records.view',
+            $module,
+        );
+
+        $unassignedPermission = $this->permission(
+            'inventory.records.delete',
+            $module,
+        );
+
+        $role = $this->role(
+            'batch_viewer',
+            $module,
+            $allowedPermission,
+        );
+
+        $team = $this->team('BATCH-CAPABILITIES');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $enterable = app(CoreAccessResolver::class)
+            ->enterableCapabilities(
+                $user,
+                [
+                    $allowedPermission->name,
+                    $unassignedPermission->name,
+                    $allowedPermission->name,
+                ],
+                $module->code,
+            );
+
+        $this->assertSame(
+            [
+                $allowedPermission->name,
+            ],
+            $enterable->all(),
+        );
     }
 
     private function createScopedAccess(): array

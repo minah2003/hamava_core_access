@@ -164,4 +164,25 @@ class TeamScopeResolverTest extends TestCase
 
         $this->assertFalse($resolver->matches($ancestorScope, $resource));
     }
+
+    public function test_unknown_module_code_returns_no_scopes(): void
+    {
+        $module = $this->module('inventory');
+        $team = $this->team('UNKNOWN-MODULE');
+
+        $this->scope(
+            $team,
+            $module,
+            'region',
+            10,
+        );
+
+        $scopes = app(TeamScopeResolver::class)
+            ->activeScopesForTeams(
+                [$team->id],
+                'missing-module',
+            );
+
+        $this->assertTrue($scopes->isEmpty());
+    }
 }

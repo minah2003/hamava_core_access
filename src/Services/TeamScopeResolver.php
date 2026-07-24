@@ -3,7 +3,6 @@
 namespace Hamava\CoreAccess\Services;
 
 use Hamava\CoreAccess\Data\ResourceDescriptor;
-use Hamava\CoreAccess\Models\CoreModule;
 use Hamava\CoreAccess\Models\CoreTeamMember;
 use Hamava\CoreAccess\Models\CoreTeamScope;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -12,33 +11,31 @@ use Illuminate\Support\Collection;
 
 class TeamScopeResolver
 {
+    public function __construct(
+        private readonly CoreAccessContext $context,
+    ) {}
+
     /**
      * @return EloquentCollection<int, CoreTeamMember>
      */
-    public function activeMemberships(Authenticatable $user): EloquentCollection
-    {
-        return CoreTeamMember::query()
-            ->with(['team', 'team.teamRoles.role.permissions', 'team.teamRoles.module', 'roles.role.permissions', 'roles.module'])
-            ->where('user_id', $user->getAuthIdentifier())
-            ->active()
-            ->whereHas('team', fn ($query) => $query->where('is_active', true))
-            ->get();
+    public function activeMemberships(
+        Authenticatable $user,
+    ): EloquentCollection {
+        return $this->context->memberships($user);
     }
 
     /**
      * @param  array<int|string>  $teamIds
      * @return EloquentCollection<int, CoreTeamScope>
      */
-    public function activeScopesForTeams(array $teamIds, ?string $moduleCode = null): EloquentCollection
-    {
-        $moduleId = $moduleCode ? CoreModule::query()->where('code', $moduleCode)->value('id') : null;
-
-        return CoreTeamScope::query()
-            ->with(['team', 'module'])
-            ->whereIn('team_id', $teamIds)
-            ->when($moduleId, fn ($query) => $query->where('module_id', $moduleId))
-            ->active()
-            ->get();
+    public function activeScopesForTeams(
+        array $teamIds,
+        ?string $moduleCode = null,
+    ): EloquentCollection {
+        return $this->context->scopes(
+            $teamIds,
+            $moduleCode,
+        );
     }
 
     /**
