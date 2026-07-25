@@ -11,8 +11,8 @@ credentials.
 Register the private VCS repository in the consuming Laravel application:
 
 ```bash
-composer config repositories.hamava-core-access vcs https://github.com/minah2003/hamava_core_access.git
-composer require hamava/core-access:^0.2
+composer config repositories.hamava-access-control vcs https://github.com/minah2003/hamava-access-control.git
+composer require hamava/access-control:^0.2
 ```
 
 The 0.2 release supports PHP 8.3, 8.4, and 8.5 with Laravel / Illuminate 13,

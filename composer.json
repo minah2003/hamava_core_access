@@ -1,5 +1,5 @@
 {
-    "name": "hamava/core-access",
+    "name": "hamava/access-control",
     "description": "Reusable access control services for Hamava Laravel applications.",
     "type": "library",
     "license": "proprietary",
@@ -49,5 +49,14 @@
         "sort-packages": true
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [{
+        "name": "hamava-access-control",
+        "type": "vcs",
+        "url": "https://github.com/minah2003/hamava-access-control.git"
+    },{
+        "name": "hamava-core-access",
+        "type": "vcs",
+        "url": "https://github.com/minah2003/hamava_core_access.git"
+    }]
 }
