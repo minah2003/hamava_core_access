@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - refactor/authorization-foundation
     tags:
       - 'v*'
 
@@ -48,6 +47,9 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Audit dependencies
+        run: composer audit --no-interaction
+
       - name: Run PHPUnit
         run: vendor/bin/phpunit
 
@@ -56,3 +58,14 @@ jobs:
 
       - name: Check whitespace
         run: git diff --check
+
+      - name: Verify clean tracked files
+        shell: bash
+        run: |
+          if ! git diff --quiet --exit-code || ! git diff --cached --quiet --exit-code; then
+            echo "::error::Tracked files changed during CI."
+            git status --short --untracked-files=no
+            git diff --stat
+            git diff --cached --stat
+            exit 1
+          fi
