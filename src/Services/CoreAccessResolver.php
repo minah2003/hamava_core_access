@@ -9,6 +9,7 @@ use Hamava\CoreAccess\Models\CoreModule;
 use Hamava\CoreAccess\Models\CorePermission;
 use Hamava\CoreAccess\Models\CoreResourceGrant;
 use Hamava\CoreAccess\Models\CoreTeamMember;
+use Hamava\CoreAccess\Models\CoreTeamScope;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 
@@ -397,7 +398,10 @@ class CoreAccessResolver
                     'deny',
                     $accessNodeId,
                 )
-                ->where('scope_type', 'all')
+                ->filter(
+                    fn (CoreTeamScope $scope): bool => $this->scopes
+                        ->isUnconditionalAllScope($scope)
+                )
                 ->values();
 
             if ($denyScopes->isNotEmpty()) {

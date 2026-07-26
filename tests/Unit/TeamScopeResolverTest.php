@@ -165,6 +165,95 @@ class TeamScopeResolverTest extends TestCase
         $this->assertFalse($resolver->matches($ancestorScope, $resource));
     }
 
+    public function test_whitespace_only_scope_values_do_not_match(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $resource = ResourceDescriptor::make('inventory', 'asset', 1, 'asset-1', [
+            'region_id' => 10,
+            'region_code' => 'north',
+            'asset_category' => 'network',
+            'asset_type' => 'olt',
+        ]);
+
+        $scopes = [
+            new CoreTeamScope([
+                'scope_type' => 'region',
+                'scope_id' => ' ',
+                'scope_code' => "\t",
+            ]),
+            new CoreTeamScope([
+                'scope_type' => 'asset_category',
+                'scope_code' => ' ',
+                'asset_category' => "\r\n",
+            ]),
+            new CoreTeamScope([
+                'scope_type' => 'asset_type',
+                'scope_code' => "\t",
+                'asset_type' => ' ',
+            ]),
+            new CoreTeamScope([
+                'scope_type' => ' ',
+                'scope_id' => 10,
+            ]),
+        ];
+
+        foreach ($scopes as $scope) {
+            $this->assertFalse($resolver->matches($scope, $resource));
+        }
+    }
+
+    public function test_zero_scope_identifier_matches_zero_resource_value(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'region',
+            'scope_id' => 0,
+        ]);
+        $resource = ResourceDescriptor::make('inventory', 'record', 1, null, [
+            'region_id' => 0,
+        ]);
+
+        $this->assertTrue($resolver->matches($scope, $resource));
+    }
+
+    public function test_all_scope_can_be_narrowed_by_asset_constraints(): void
+    {
+        $resolver = app(TeamScopeResolver::class);
+        $scope = new CoreTeamScope([
+            'scope_type' => 'all',
+            'asset_category' => 'network',
+            'asset_type' => 'olt',
+        ]);
+
+        $matchingResource = ResourceDescriptor::make(
+            'inventory',
+            'asset',
+            1,
+            null,
+            [
+                'asset_category' => 'network',
+                'asset_type' => 'olt',
+            ],
+        );
+        $unrelatedResource = ResourceDescriptor::make(
+            'inventory',
+            'asset',
+            2,
+            null,
+            [
+                'asset_category' => 'network',
+                'asset_type' => 'router',
+            ],
+        );
+
+        $this->assertTrue(
+            $resolver->matches($scope, $matchingResource),
+        );
+        $this->assertFalse(
+            $resolver->matches($scope, $unrelatedResource),
+        );
+    }
+
     public function test_unknown_module_code_returns_no_scopes(): void
     {
         $module = $this->module('inventory');

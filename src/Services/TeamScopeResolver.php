@@ -51,6 +51,7 @@ class TeamScopeResolver
     ): EloquentCollection {
         return $this->activeScopesForTeams($teamIds, $moduleCode)
             ->filter(fn (CoreTeamScope $scope): bool => ($effect === null || $scope->effect === $effect)
+                && $this->scopeIsUsable($scope)
                 && $this->matchesAccessNode($scope, $accessNodeId)
                 && $this->matches($scope, $resource))
             ->values();
@@ -68,6 +69,7 @@ class TeamScopeResolver
     ): EloquentCollection {
         return $this->activeScopesForTeams($teamIds, $moduleCode)
             ->filter(fn (CoreTeamScope $scope): bool => ($effect === null || $scope->effect === $effect)
+                && $this->scopeIsUsable($scope)
                 && $this->matchesAccessNode($scope, $accessNodeId))
             ->values();
     }
@@ -98,6 +100,10 @@ class TeamScopeResolver
 
     public function matches(CoreTeamScope $scope, ResourceDescriptor $resource): bool
     {
+        if (! $this->scopeIsUsable($scope)) {
+            return false;
+        }
+
         if ($this->hasScopeValue($scope->asset_category) && $resource->attribute('asset_category') !== $scope->asset_category) {
             return false;
         }
@@ -128,7 +134,7 @@ class TeamScopeResolver
         $ids = $resource->idsFor($scope->scope_type, $includeAncestors);
         $codes = $resource->codesFor($scope->scope_type, $includeAncestors);
 
-        if ($scope->scope_id !== null && in_array((string) $scope->scope_id, array_map('strval', $ids), true)) {
+        if ($this->hasScopeValue($scope->scope_id) && in_array((string) $scope->scope_id, array_map('strval', $ids), true)) {
             return true;
         }
 
@@ -137,6 +143,14 @@ class TeamScopeResolver
         }
 
         return false;
+    }
+
+    public function isUnconditionalAllScope(CoreTeamScope $scope): bool
+    {
+        return $this->scopeIsUsable($scope)
+            && $scope->scope_type === 'all'
+            && ! $this->hasScopeValue($scope->asset_category)
+            && ! $this->hasScopeValue($scope->asset_type);
     }
 
     private function matchesAccessNode(CoreTeamScope $scope, ?int $accessNodeId): bool
@@ -150,7 +164,25 @@ class TeamScopeResolver
 
     private function hasScopeValue(mixed $value): bool
     {
-        return $value !== null && $value !== '';
+        return $value !== null
+            && (! is_string($value) || trim($value) !== '');
+    }
+
+    private function scopeIsUsable(CoreTeamScope $scope): bool
+    {
+        if (! $this->hasScopeValue($scope->scope_type)) {
+            return false;
+        }
+
+        return match ($scope->scope_type) {
+            'all' => true,
+            'asset_category' => $this->hasScopeValue($scope->scope_code)
+                || $this->hasScopeValue($scope->asset_category),
+            'asset_type' => $this->hasScopeValue($scope->scope_code)
+                || $this->hasScopeValue($scope->asset_type),
+            default => $this->hasScopeValue($scope->scope_id)
+                || $this->hasScopeValue($scope->scope_code),
+        };
     }
 
     private function firstScopeValue(mixed ...$values): mixed
