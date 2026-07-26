@@ -1,4 +1,4 @@
-# Hamava Core Access
+# Hamava Access Control
 
 Reusable Laravel access control services for Hamava applications.
 
@@ -6,13 +6,25 @@ This repository is a Composer package only. It does not contain a Laravel
 application, database dumps, environment files, or application-specific
 credentials.
 
+The Composer package name is `hamava/access-control`. The PHP namespace remains
+`Hamava\CoreAccess` throughout the backward-compatible `0.2.x` line. That legacy
+namespace does not mean this package owns Core Runtime. Renaming the namespace,
+configuration keys, middleware aliases, container aliases, facade aliases, or
+publish tags requires a future major-version migration.
+
+This package owns Authorization only. OAuth and PKCE flows, the Core HTTP
+client, sessions, and Localization Runtime belong to a future
+`hamava/core-runtime` package. FTTH- and ITSM-specific scope-to-column SQL
+mapping remains in those consumer applications.
+
 ## Installation
 
-Register the private VCS repository in the consuming Laravel application:
+When the package is not available through Packagist, register its public VCS
+repository in the consuming Laravel application:
 
 ```bash
 composer config repositories.hamava-access-control vcs https://github.com/minah2003/hamava-access-control.git
-composer require hamava/access-control:^0.2
+composer require hamava/access-control:^0.2.1
 ```
 
 The 0.2 release supports PHP 8.3, 8.4, and 8.5 with Laravel / Illuminate 13,
@@ -68,12 +80,15 @@ themselves.
 For resource-scoped capabilities, authorization decisions use the following
 precedence:
 
-1. Explicit resource deny
-2. Matching team deny scope
-3. Operator-global capability
-4. Explicit resource allow
-5. Matching team allow scope
-6. Deny when no allow rule matches
+1. An inactive or invalid user, permission, module, role, or assignment denies.
+2. An explicit matching resource deny wins.
+3. A matching team deny scope wins.
+4. A valid base capability or operator-global assignment must exist.
+5. Operator-global access may bypass missing allow scopes only when no
+   applicable deny exists.
+6. An explicit resource allow may allow the resource.
+7. A matching team allow scope may allow the resource.
+8. Otherwise, access is denied.
 
 An explicit resource allow does not grant a capability by itself. The user
 must first receive the capability through an active role assignment.
@@ -115,6 +130,8 @@ resource grants, and deny precedence.
 Existing uses may remain temporarily for backward compatibility, but they
 must be migrated before version `1.0.0`.
 
+`ScopedByCoreTeam` remains deprecated and must not be used by new domain code.
+
 ## Scope Catalogs
 
 Consuming applications own migrations for the dynamic scope catalog tables:
@@ -137,13 +154,25 @@ results gracefully when these tables have not been created yet.
 - `Hamava\CoreAccess\Services\CoreNavigationResolver`
 - `Hamava\CoreAccess\Services\CoreQueryAuthorizationResolver`
 - `Hamava\CoreAccess\Data\QueryAuthorizationContext`
+- `Hamava\CoreAccess\Data\ResourceDescriptor`
+- `Hamava\CoreAccess\Contracts\DescribesCoreResource`
 - `Hamava\CoreAccess\Services\ScopeCatalogService`
 - `Hamava\CoreAccess\Services\ScopeEntityOptionProvider`
 - `Hamava\CoreAccess\Services\TeamScopeResolver`
 - `Hamava\CoreAccess\Facades\CoreAccess`
 - `Hamava\CoreAccess\Facades\CoreNavigation`
+- `Hamava\CoreAccess\Middleware\CoreCan`
 - `Hamava\CoreAccess\Middleware\CoreNodeCan`
 - `Hamava\CoreAccess\Services\CoreAccessContext`
+
+## Spatie Permission Integration
+
+Roles and permissions use `spatie/laravel-permission`. Consumer applications
+must configure Spatie's permission and role models to use
+`Hamava\CoreAccess\Models\CorePermission` and
+`Hamava\CoreAccess\Models\CoreRole`, as demonstrated by the package test
+environment. This package then combines those roles and permissions with
+Hamava team memberships, assignments, scopes, and resource grants.
 
 ## Query Authorization Context
 
@@ -181,7 +210,15 @@ $context = $resolver->resolve(
 - `hasBaseGrant()` is true only when the user has either the requested
   capability or operator-global access.
 - `hasAnyAllowPath()` is false without a base grant and is also false when an
-  applicable `scope_type = all` deny scope blocks the whole query plan.
+  applicable unconditional `scope_type = all` deny scope blocks the whole
+  query plan.
+
+Only an explicit, valid `scope_type = all` is an intentional wildcard. Empty
+or malformed scopes are ignored by authorization decision paths and never
+become wildcards. Whitespace-only identifiers and asset values are empty;
+numeric or string zero remains a valid scope value. A narrowed all-scope with
+asset-category or asset-type constraints is row-specific, not an unconditional
+deny of the complete query.
 
 Explicit resource grants are separated into allow and deny collections.
 Consuming applications must apply deny predicates before allow predicates.
@@ -193,6 +230,16 @@ The package intentionally does not map domain scope types to SQL columns. Each
 application must implement that mapping in its own domain query service.
 `resolve()` is for collection and query planning. It does not replace
 `CoreAccess::check()` for authorizing one concrete resource.
+
+The domain query service must apply the returned plan in SQL before pagination,
+export, count, or aggregation.
+
+## Navigation Payloads
+
+Navigation filtering is an Authorization concern, but navigation presentation
+is owned by consumers. The package returns route names, icons, `label`,
+`label_fa`, translation keys, and related presentation fields as compatibility
+payloads. It does not resolve translations or implement Localization Runtime.
 
 ## Request-scoped Authorization Context
 
@@ -383,15 +430,15 @@ Expected local checks:
 
 ```bash
 composer validate --strict
-composer install --no-interaction --prefer-dist
+composer install --no-interaction --prefer-dist --no-progress
+composer audit --no-interaction
 vendor/bin/phpunit
 vendor/bin/pint --test
 git diff --check
 ```
 
 GitHub Actions runs these checks for pull requests targeting `main`, pushes to
-`main`, pushes to `refactor/authorization-foundation` while that branch remains
-active, and version tags. Each trigger runs against PHP 8.3, 8.4, and 8.5.
+`main`, and version tags. Each trigger runs against PHP 8.3, 8.4, and 8.5.
 
 A release tag must only be created from a green, merged `main` commit.
 
