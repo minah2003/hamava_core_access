@@ -196,11 +196,21 @@ class CoreAccessResolverTest extends TestCase
         $this->assertSame('No matching scope for resource.', $denied->reason);
     }
 
-    public function test_explicit_resource_deny_overrides_matching_scope(): void
+    public function test_explicit_resource_deny_overrides_matching_allow_grant_and_scope(): void
     {
         [$user, $module, $permission] = $this->createScopedAccess();
 
-        CoreResourceGrant::query()->create([
+        $allowGrant = CoreResourceGrant::query()->create([
+            'principal_type' => 'user',
+            'principal_id' => $user->id,
+            'module_id' => $module->id,
+            'capability_id' => $permission->id,
+            'resource_type' => 'record',
+            'resource_id' => 15,
+            'effect' => 'allow',
+        ]);
+
+        $denyGrant = CoreResourceGrant::query()->create([
             'principal_type' => 'user',
             'principal_id' => $user->id,
             'module_id' => $module->id,
@@ -218,6 +228,14 @@ class CoreAccessResolverTest extends TestCase
 
         $this->assertFalse($decision->allowed);
         $this->assertSame('Denied by explicit resource grant.', $decision->reason);
+        $this->assertContains(
+            $denyGrant->id,
+            $decision->matched['resource_grant_ids'],
+        );
+        $this->assertNotContains(
+            $allowGrant->id,
+            $decision->matched['resource_grant_ids'],
+        );
     }
 
     public function test_operator_global_permission_bypasses_resource_scope(): void
@@ -349,6 +367,87 @@ class CoreAccessResolverTest extends TestCase
 
         $this->assertTrue($decision->allowed);
         $this->assertSame('Allowed by team scope and role capability.', $decision->reason);
+    }
+
+    public function test_malformed_scope_does_not_allow_page_entry(): void
+    {
+        [$user, $module, $permission, $node, , $team] = $this
+            ->createScopedPageAccess('malformed-scope');
+
+        $this->scope(
+            $team,
+            $module,
+            'region',
+            ' ',
+            'allow',
+            $node,
+        );
+
+        $decision = app(CoreAccessResolver::class)
+            ->canEnterAccessNode(
+                $user,
+                $permission->name,
+            );
+
+        $this->assertFalse($decision->allowed);
+        $this->assertSame(
+            'No matching scope for access node.',
+            $decision->reason,
+        );
+    }
+
+    public function test_narrowed_all_deny_does_not_block_page_entry_for_every_resource(): void
+    {
+        $user = $this->user('page-narrowed-all-deny');
+        $module = $this->module('inventory');
+        $node = $this->node($module, 'inventory.records');
+        $pagePermission = $this->permission(
+            'inventory.records.view',
+            $module,
+            requiresScope: true,
+            node: $node,
+        );
+        $globalPermission = $this->permission(
+            'inventory.operator_global',
+            $module,
+        );
+        $role = $this->role(
+            'page_narrowed_all_operator',
+            $module,
+            $globalPermission,
+        );
+        $team = $this->team('PAGE-NARROWED-ALL');
+
+        $this->membership(
+            $user,
+            $team,
+            $role,
+            $module,
+        );
+
+        $denyScope = $this->scope(
+            $team,
+            $module,
+            'all',
+            null,
+            'deny',
+            $node,
+        );
+        $denyScope->update([
+            'asset_type' => 'olt',
+        ]);
+
+        $decision = app(CoreAccessResolver::class)
+            ->canEnterAccessNode(
+                $user,
+                $pagePermission->name,
+            );
+
+        $this->assertTrue($decision->allowed);
+        $this->assertSame(
+            'Allowed by operator-global capability.',
+            $decision->reason,
+        );
     }
 
     public function test_inactive_user_is_denied_and_has_no_capabilities(): void

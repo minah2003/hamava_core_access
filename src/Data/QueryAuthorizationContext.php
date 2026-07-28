@@ -60,7 +60,8 @@ final class QueryAuthorizationContext
 
         if (
             $this->denyScopes->contains(
-                fn (CoreTeamScope $scope): bool => $scope->scope_type === 'all'
+                fn (CoreTeamScope $scope): bool => $this
+                    ->isUnconditionalAllScope($scope)
             )
         ) {
             return false;
@@ -70,7 +71,40 @@ final class QueryAuthorizationContext
             return true;
         }
 
-        return $this->allowScopes->isNotEmpty()
+        return $this->allowScopes->contains(
+            fn (CoreTeamScope $scope): bool => $this->scopeIsUsable($scope)
+        )
             || $this->allowResourceGrants->isNotEmpty();
+    }
+
+    private function isUnconditionalAllScope(CoreTeamScope $scope): bool
+    {
+        return $this->scopeIsUsable($scope)
+            && $scope->scope_type === 'all'
+            && ! $this->hasScopeValue($scope->asset_category)
+            && ! $this->hasScopeValue($scope->asset_type);
+    }
+
+    private function scopeIsUsable(CoreTeamScope $scope): bool
+    {
+        if (! $this->hasScopeValue($scope->scope_type)) {
+            return false;
+        }
+
+        return match ($scope->scope_type) {
+            'all' => true,
+            'asset_category' => $this->hasScopeValue($scope->scope_code)
+                || $this->hasScopeValue($scope->asset_category),
+            'asset_type' => $this->hasScopeValue($scope->scope_code)
+                || $this->hasScopeValue($scope->asset_type),
+            default => $this->hasScopeValue($scope->scope_id)
+                || $this->hasScopeValue($scope->scope_code),
+        };
+    }
+
+    private function hasScopeValue(mixed $value): bool
+    {
+        return $value !== null
+            && (! is_string($value) || trim($value) !== '');
     }
 }
